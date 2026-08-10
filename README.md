@@ -1,9 +1,5 @@
 # SMoEA — Scalable Mixture-of-Experts Adapters
 
-以「任務路由 ＋ 每任務 LoRA adapter」組成的可擴充專家系統：query 先由
-Router 判定歸屬——已知任務路由到對應 adapter 生成；域外查詢選擇性
-拒絕、交由 Adapter Merging 分支處理。
-
 ![architecture](docs/architecture.png)
 
 ## 目錄結構（什麼東西在哪裡）
