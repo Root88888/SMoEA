@@ -1,0 +1,17 @@
+# TWCC 基準環境鎖定檔（conda env、python 3.12、自包含不依賴容器）
+# 用法：conda activate 後 `pip install -r requirements-lock-twcc.txt`
+# 版本依據：numpy/scipy/sklearn 對齊路由資產建置環境（質心可重現）；
+# transformers/peft/bnb 為已驗證組合；torch 自帶 cu121（TWCC driver 535 相容）
+--extra-index-url https://download.pytorch.org/whl/cu121
+setuptools>=70   # 部分套件建置/相容需要（py3.12 無 distutils）
+torch==2.4.1
+numpy==1.26.4
+scipy==1.17.1
+scikit-learn==1.8.0
+PyYAML==6.0.2
+matplotlib==3.9.2
+sentence-transformers==3.2.1
+transformers==4.46.3
+accelerate==1.1.1
+peft==0.14.0
+bitsandbytes==0.49.2   # 0.4x 早期版在 py3.12 依賴已移除的 distutils；本版需 torch>=2.2（本檔 torch 2.4.1 滿足）

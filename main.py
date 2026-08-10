@@ -115,11 +115,19 @@ def print_diagnosis(d):
 # ---------------------------------------------------------------------------
 # 互動模式
 # ---------------------------------------------------------------------------
-def run_interactive(cfg, rt):
+def run_interactive(cfg, rt, preload=True):
     engine = InferenceEngine(cfg)
     vmode = cfg["system"]["verifier_mode"]
     scorer = make_verifier(cfg, vmode)
     descs = rt.load_descriptions() if vmode != "off" else None
+    if preload:
+        print("[warmup] 預載嵌入模型…", flush=True)
+        rt._embed(["warmup"])          # bge 首載也在開場完成
+        if vmode != "swap":
+            # 重載入全部集中在開場：使用者輸入後的等待只剩
+            # adapter 熱切換（秒級）與生成本身。swap 模式不預載
+            # 生成模型（其設計本來就是用到才載、判完即卸）。
+            engine.load_base()
     print("\n===== SMoEA 互動模式（輸入 query，exit 離開）=====")
     while True:
         try:
@@ -246,12 +254,14 @@ def main():
         p.add_argument("--tasks", default=None,
                        help="批次模式限定任務，如 3,7,10；預設全部"),
         p.add_argument("--limit", type=int, default=None,
-                       help="批次模式每任務最多筆數（試跑用）")))
+                       help="批次模式每任務最多筆數（試跑用）"),
+        p.add_argument("--no_preload", action="store_true",
+                       help="互動模式不預載模型（只看路由判定的輕量用法）")))
     rt = Router.load(cfg)
     print(f"[Router] 資產已載：{len(rt.id_tasks)} 任務、"
           f"{len(rt.units)} 路由單位")
     if args.mode == "interactive":
-        run_interactive(cfg, rt)
+        run_interactive(cfg, rt, preload=not args.no_preload)
     else:
         run_batch(cfg, rt, args.tasks, args.limit)
 

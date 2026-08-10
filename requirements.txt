@@ -1,5 +1,10 @@
-# SMoEA Router 依賴（Python >= 3.10）
-# 核心（selftest 與 CPU 段只需要前四項＋numpy）
+# SMoEA 依賴（Python >= 3.10）
+#
+# 版本鎖定原則：以下組合為「已驗證的 reproduce 基準」。這組最低需求
+# 寬鬆、向上相容——環境已有較新 torch 也能直接用；全新環境會由 pip
+# 自動補一顆相容 torch。不同環境的兩個已知調整點見文末。
+
+# --- 核心（路由層與評測；selftest 只需這五項）---
 numpy>=1.24
 scipy>=1.10
 scikit-learn>=1.3   # 復現既有質心結構時需與建置環境同版
@@ -7,11 +12,18 @@ scikit-learn>=1.3   # 復現既有質心結構時需與建置環境同版
 PyYAML>=6.0
 matplotlib>=3.7
 
-# 嵌入與送審裁決（build 首次嵌入與 eval score 段才需要）。
-# NGC 類容器注意：內建 torch 版號如 2.1.0a0 會被 pip 判為過舊而重裝、
-# 造成 CUDA 失配。容器環境請註解掉 torch 這行，改以
-# --system-site-packages venv 沿用容器內建 torch。
-torch>=2.1
-transformers>=4.44
-accelerate>=0.26   # load_llm 的 device_map=auto 需要
+# --- 生成與裁決（build 首次嵌入、eval score 段、main.py 需要）---
 sentence-transformers>=3.0
+transformers==4.46.3   # 鎖版：5.x 起要求 torch>=2.4，會在舊 torch 環境觸發重裝
+accelerate>=0.26       # device_map=auto 需要
+peft==0.14.0           # adapter 熱切換/合成；鎖版理由同上（0.20+ 要 torch>=2.2）
+bitsandbytes>=0.49     # 僅供互動模式 4bit 裁決（選配，見下）；0.4x 早期版
+                       # 在 python 3.12 依賴已移除的 distutils，勿用
+
+# --- 環境建議 ---
+# 1) 揮發性容器環境（TWCC 等按時計費、常重開者）：建議放棄依賴容器層，
+#    改用自包含 conda env ＋ requirements-lock-twcc.txt 一次鎖定安裝
+#    （含 torch）；完整流程見部署指南。本檔不列 torch 是為了讓「環境
+#    已有 torch」的場景（含較舊版本）不被 pip 觸發重裝。
+# 2) bitsandbytes 僅供互動模式 4bit 裁決（選配）：裝不起來就移除該行，
+#    configs 的 system.verifier_mode 改 swap 或 off，主流程不受影響。
