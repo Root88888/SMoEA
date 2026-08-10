@@ -46,10 +46,9 @@ docs/                       架構圖與文件
 ```bash
 # 通用環境
 pip install -r requirements.txt
-# TWCC（揮發容器）：用鎖定檔建自包含 conda env，流程見部署指南
 pip install -r requirements-lock-twcc.txt
 
-python scripts/check_env.py            # 環境體檢（PASS 才開工）
+python scripts/check_env.py            # 環境體檢
 python scripts/selftest_core_modules.py
 python scripts/selftest_end_to_end.py
 python scripts/selftest_main_pipeline.py
