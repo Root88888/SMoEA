@@ -55,6 +55,8 @@ docs/                       架構圖與文件
      多包一層目錄，將其中的 `task*` 移出攤平
 
 3. 一鍵建置
+   已在 dataset/ood_tasks.txt 定義 OOD 任務有哪些，如果編號方式不同請修改
+
 ```bash
    bash scripts/setup_workspace.sh
 ```
@@ -63,7 +65,7 @@ docs/                       架構圖與文件
    （首次 10-20 分鐘）、環境體檢、查詢嵌入計算與路由資產建置
    （首次 GPU 數分鐘）。結尾印出「全部就緒」即完成；中途停止時
    依提示處理後重跑即可（已完成步驟自動跳過）。
- 
+   
 4. 執行確認
 ```bash
    conda activate smoea
