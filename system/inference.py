@@ -10,7 +10,7 @@ system/inference.py
   prompt      = 樣本的 full_prompt 原文（base model 不套 chat template），
                 前補 bos token
   tokenize    = 左 padding、truncation
-  解碼        = 貪婪（do_sample=False）、max_new_tokens=512、
+  解碼        = do_sample=False、max_new_tokens=512、
                 eos 併集（end_of_text 與 tokenizer eos 都保留）、
                 stop_strings 防 few-shot 續寫、取 input 之後段、
                 skip_special_tokens 解碼
