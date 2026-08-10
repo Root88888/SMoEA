@@ -4,7 +4,7 @@
 scripts/check_env.py
 
 【環境一鍵體檢】任何工作開始前先跑本腳本；全部 PASS 才代表環境正確。
-檢查三類問題（全部是實際踩過的雷）：
+檢查三類問題：
   1. 版本：核心套件是否等於鎖定檔基準（requirements-lock-twcc.txt）；
   2. 來源：每個套件的載入路徑是否來自「當前環境」——抓 user-site
      （~/.local）與 conda 疊層造成的冒牌套件；
@@ -12,7 +12,6 @@ scripts/check_env.py
 
 【執行】python scripts/check_env.py
 結束碼 0=全 PASS；非 0=列出每條 FAIL 與處置提示。
-非國網環境版本不同屬正常，看第 2、3 類是否乾淨即可。
 """
 
 import os
