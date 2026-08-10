@@ -75,10 +75,13 @@ except ImportError:
 bad_local = [d for d in ("~/.local/lib/python3.10", "~/.local/lib/python3.12",
                          "~/.local/lib/python3.13")
              if os.path.isdir(os.path.expanduser(d))]
-check("user-site 殘留", not bad_local,
-      ", ".join(bad_local) if bad_local else "無",
-      "mv ~/.local/lib ~/.local/lib.graveyard（PYTHONNOUSERSITE=1 下"
-      "非致命，但建議封存）")
+protected = os.environ.get("PYTHONNOUSERSITE") == "1"
+check("user-site 隔離", protected or not bad_local,
+      ("無殘留" if not bad_local else
+       f"{', '.join(bad_local)}（已由 PYTHONNOUSERSITE=1 隔離，無害）"
+       if protected else ", ".join(bad_local)),
+      "設 PYTHONNOUSERSITE=1（setup_workspace.sh 會固化進 env），"
+      "或 mv ~/.local/lib ~/.local/lib.graveyard")
 
 print()
 if fails:
