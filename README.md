@@ -6,11 +6,9 @@
 
 ```
 main.py                     系統入口：interactive / batch 兩模式
-configs/default.yaml        全部設定唯一定義處（路徑、門檻、模型、生成參數；
-                            任何設定可用 --set key=value 臨時覆蓋）
+configs/default.yaml        全部設定唯一定義處（路徑、門檻、模型、生成參數；任何設定可用 --set key=value 臨時覆蓋）
 router/                     路由決策層
-  core.py                   Router 類別：build / save / load / decide /
-                            escalate / finalize——路由邏輯唯一所在
+  core.py                   Router 類別：build / save / load / decide / escalate / finalize——路由邏輯唯一所在
   config.py data_io.py      設定載入、資料與嵌入快取 I/O
   embedding.py              查詢嵌入（bge）
   fingerprint.py units.py   任務指紋、多質心、路由單位
@@ -18,8 +16,7 @@ router/                     路由決策層
   verifier.py               送審 LLM 是非題裁決
   metrics.py                評測計分
 system/                     路由之後的執行層
-  inference.py              InferenceEngine：base model 常駐、
-                            per-task adapter 熱切換、生成
+  inference.py              InferenceEngine：base model 常駐、per-task adapter 熱切換、生成
   rejection.py              拒絕分支（Model Merging）介面
 scripts/
   check_env.py              環境體檢
@@ -29,14 +26,11 @@ scripts/
   eval_baseline_*.py        兩支 baseline
   verify_flow_table.py      評測結果獨立重放驗證
   plot_centroids.py         質心結構圖
-dataset/                    任務樣本（不進 git）
+dataset/                    資料（不進 git）；請建立 dataset 目錄以及 dataset/train_data/ 和 dataset/test_data/
   train_data/task{N}_train.json
-  test_data/task{N}_test.json     ID 與 OOD 測試檔同放；只有測試檔、
-                                  沒有訓練檔的任務自動視為 OOD
-adapter/task{N}/            LoRA adapters（不進 git）：目錄內直接放
-                            adapter 檔，或多個 checkpoint-*/ 自動取最新
-assets/                     路由建置產物；unit_descriptions.json 為
-                            人工校訂的單位說明書
+  test_data/task{N}_test.json
+adapter/task{N}/            LoRA adapters（不進 git）：請建立 adapter 目錄，將 task{N} 直接放在 adapter/ 下，task 內如有多個 checkpoint-*/ 自動取最新
+assets/                     路由建置產物；unit_descriptions.json 為人工校訂的單位說明書
 results/                    評測與批次輸出
 docs/                       架構圖與文件
 ```
