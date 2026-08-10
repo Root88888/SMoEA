@@ -2,56 +2,60 @@
 """
 system/rejection.py
 
-【拒絕分支：Adapter Merging → Inference】——本檔是拒絕分支負責人的
-實作起點。架構圖中 Router 判「Reject」的查詢會進到 handle_rejection，
-目標是：從 router 診斷資訊決定「合成哪些任務的 adapter、各配多少
-權重」，合成後生成輸出。
+【拒絕分支（Adapter Merging）——本檔為此分支的唯一接入點】
 
-■ 已備妥、不需要重做的部分
-  - 合成與載入機制：InferenceEngine.load_adapters_merged(weights)
-    （PEFT add_weighted_adapter 線性合成＋切換生效），合完直接
-    engine.generate([query]) 即得輸出——不需要碰 PEFT/模型細節。
-  - 診斷素材：diagnosis dict（見下）包含決定權重所需的全部訊號。
+■ 主程式如何呼叫
+  main.py 對 Router 判定拒絕的每一筆 query 呼叫本檔的
+  handle_rejection(query, diagnosis, engine)：
+  - 互動模式：拒絕當下即呼叫，回傳值直接印為 [Output]；
+  - 批次模式：拒絕樣本逐筆呼叫，回傳值寫入
+    results/main_batch_outputs.jsonl 的 output 欄（目前未實作，
+    該欄為 null）。
+  本函式實作完成後不需改動 main.py 或其他任何檔案。
 
-■ 待實作的部分（本函式）
-  由 diagnosis 決定 weights，例如（僅供發想，非指定作法）：
-  - 以 top-3 單位相似度 softmax 當權重；
-  - 送審樣本可再利用三候選的 p_yes 加權；
-  - 或先做實驗決定固定 top-k 與溫度係數。
+■ 輸入
+  query: str
+      查詢原文（同時就是生成用 prompt；批次模式傳入的是樣本的
+      full_prompt）。
+  diagnosis: dict
+      Router 對該筆的判定素材：
+        zone        "red"（紅區拒絕）| "esc_rej"（送審後拒絕）
+        top_units   [int, int, int]        全域 top-3 路由單位編號
+        top_tasks   ["task23", ...]        各單位內最相似任務（同長度）
+        top_sims    [float, ...]           對應的嵌入相似度
+        margin      float                  top1−top2 單位相似度差
+        pval        float                  Mondrian 共形 p 值
+        esc_p_yes   [float, float, float]  送審三候選的 LLM 裁決分數，
+                    | None                 順序對應 top_tasks；紅區為 None
+  engine: system.inference.InferenceEngine
+      已載妥 base model（unsloth/Meta-Llama-3.1-8B）的生成引擎。
 
-■ diagnosis 內容
-  {
-    "zone":       "red" | "esc_rej"        # 哪種拒絕
-    "top_units":  [u1, u2, u3],            # 全域 top-3 路由單位
-    "top_tasks":  ["task23", ...],         # 各單位內最相似任務（同長度）
-    "top_sims":   [0.71, 0.66, 0.60],      # 對應單位相似度
-    "margin":     float,                   # top1-top2 單位相似度差
-    "pval":       float,                   # Mondrian 共形 p 值
-    "esc_p_yes":  [0.31, 0.22, 0.08] | None  # 送審三候選的裁決分數
-                                             # （紅區拒絕為 None）
-  }
+■ 輸出
+  str——模型輸出文本，主程式原樣使用。
 
-■ 驗收建議
-  批次模式（main.py --mode batch）對 OOD 測試檔會把拒絕樣本逐筆
-  送進本函式，輸出 jsonl 可直接接 LLM judge 評分，與「純 base
-  model」「最相似單一 adapter」兩條 baseline 比較。
+■ engine 提供的方法
+  engine.load_adapters_merged(weights: dict[str, float]) -> str
+      以 {task_key: weight} 對各任務 adapter 做線性合成
+      （PEFT add_weighted_adapter, combination_type="linear"）並切換
+      生效；成員 adapter 未載入者自動從 adapter/{task_key}/ 載入。
+      需要其他合成方式時可自行擴充 InferenceEngine 或直接操作
+      engine.model（PeftModel）。
+  engine.ensure_adapter(task_key: str)
+      切換至單一任務 adapter。
+  engine.generate(prompts: list[str]) -> list[str]
+      生成（貪婪解碼、max_new_tokens=512、stop_strings 等設定與
+      ID 路徑一致，見 system/inference.py）。
+  adapter 檔案位置與解析規則：adapter/{task_key}/ 直含 adapter 檔，
+  或多個 checkpoint-*/ 取最新（system.inference.resolve_adapter_path）。
+
+■ 執行與驗收
+  互動：python main.py --mode interactive，輸入域外 query 即觸發本函式。
+  批次：python main.py --mode batch [--tasks ...]，拒絕樣本的輸出
+        （含完整 diagnosis）落在 results/main_batch_outputs.jsonl，
+        可直接接下游評分。
+  環境：照 README 環境建置節；scripts/check_env.py 全 PASS 後開工。
 """
 
 
 def handle_rejection(query: str, diagnosis: dict, engine) -> str:
-    """拒絕分支入口。回傳模型輸出字串。
-
-    參數
-    ----
-    query:     使用者查詢原文（也是生成 prompt）
-    diagnosis: 見檔頭說明
-    engine:    system.inference.InferenceEngine（base model 已載）
-
-    範例骨架（決定 weights 後只需兩行）：
-        weights = {...task_key -> float...}   # ← 本函式的核心工作
-        engine.load_adapters_merged(weights)
-        return engine.generate([query])[0]
-    """
-    raise NotImplementedError(
-        "Adapter Merging 分支尚未實作——由拒絕分支負責人從本檔繼續。"
-        "合成/載入/生成機制已備妥（見檔頭說明），只需實作權重決策。")
+    raise NotImplementedError("Adapter Merging 分支尚未實作。")
