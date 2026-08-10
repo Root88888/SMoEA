@@ -42,9 +42,15 @@ docs/                       架構圖與文件
 ```
 
 ## 環境建置
+**一鍵前置**——環境、資料、adapter、路由資產全部代辦，
+結束即可直接跑 main.py：
 
+​```bash
+bash scripts/setup_workspace.sh
+​```
+
+手動建置（其他環境）：
 ```bash
-# 通用環境
 pip install -r requirements.txt
 pip install -r requirements-lock-twcc.txt
 
