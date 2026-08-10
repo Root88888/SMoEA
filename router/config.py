@@ -73,10 +73,10 @@ def discover_tasks(cfg):
     """回傳 (id_tasks, ood_tasks)，皆為排序後的 int list。
 
     兩種模式：
-    - dataset/ood_tasks.txt 存在（建議、repo 自帶）：以宣告為準，
-      並做一致性檢查——宣告 OOD 卻有 train 檔、宣告 OOD 卻缺
-      test 檔、有 test 沒 train 卻未宣告，三種錯置一律報錯擋下
-      （防止誤放檔案讓 OOD 被靜默當成 ID 訓練/校準）。
+    - dataset/ood_tasks.txt 存在（建議、repo 自帶）：**宣告即真相**
+      ——列於其中者為 OOD，train 檔存在與否皆忽略（專案 convention：
+      OOD 任務的訓練資料照常存放，僅身分由宣告決定）。仍檢查兩種
+      真錯置：宣告 OOD 卻缺 test 檔；有 test 沒 train 卻未宣告。
     - 無標記檔：退回自動推導（train_data 有檔 → ID；只在
       test_data 有檔 → OOD）。
     """
@@ -95,12 +95,6 @@ def discover_tasks(cfg):
                 line = line.split("#")[0].strip()
                 if line:
                     declared.add(int(line))
-        bad = sorted(declared & train_ids)
-        if bad:
-            raise ValueError(
-                f"任務 {bad} 宣告為 OOD（{marker}）卻存在訓練檔——"
-                f"OOD 不可有 train 資料；請移除該 train 檔，"
-                f"或自 ood_tasks.txt 移除該任務")
         missing = sorted(declared - test_ids)
         if missing:
             raise ValueError(
@@ -110,6 +104,6 @@ def discover_tasks(cfg):
             raise ValueError(
                 f"任務 {undeclared} 只有測試檔但未宣告於 {marker}——"
                 f"若為 OOD 請補進該檔；若為 ID 請補其 train 檔")
-        return sorted(train_ids), sorted(declared)
+        return sorted(train_ids - declared), sorted(declared)
 
     return sorted(train_ids), sorted(test_ids - train_ids)
