@@ -136,6 +136,18 @@ def main():
     py = sys.executable
     C = ["--config", cfgp]
 
+    # ---- OOD 宣告檔防呆：宣告 OOD 卻放 train 檔必須報錯 ----
+    mk = os.path.join(root, "dataset", "ood_tasks.txt")
+    open(mk, "w").write("901\n902\n")
+    bait = os.path.join(root, "dataset", "train_data", "task901_train.json")
+    json.dump([{"input": "bait"}], open(bait, "w"))
+    r = subprocess.run([py, "scripts/build_router_assets.py"] + C,
+                       cwd=REPO, capture_output=True, text=True)
+    assert r.returncode != 0 and "宣告為 OOD" in (r.stdout + r.stderr), \
+        "錯置 OOD train 檔未被攔下"
+    os.remove(bait)
+    print("[E2E-PASS] OOD 宣告防呆：錯置 train 檔被攔下")
+
     # ---- build ----
     out = run([py, "scripts/build_router_assets.py"] + C)
     assert "缺單位說明書" in out
