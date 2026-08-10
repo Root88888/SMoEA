@@ -1,0 +1,17 @@
+# SMoEA Router 依賴（Python >= 3.10）
+# 核心（selftest 與 CPU 段只需要前四項＋numpy）
+numpy>=1.24
+scipy>=1.10
+scikit-learn>=1.3   # 復現既有質心結構時需與建置環境同版
+                    # （KMeans/silhouette 跨版本同 seed 不保證同結果）
+PyYAML>=6.0
+matplotlib>=3.7
+
+# 嵌入與送審裁決（build 首次嵌入與 eval score 段才需要）。
+# NGC 類容器注意：內建 torch 版號如 2.1.0a0 會被 pip 判為過舊而重裝、
+# 造成 CUDA 失配。容器環境請註解掉 torch 這行，改以
+# --system-site-packages venv 沿用容器內建 torch。
+torch>=2.1
+transformers>=4.44
+accelerate>=0.26   # load_llm 的 device_map=auto 需要
+sentence-transformers>=3.0

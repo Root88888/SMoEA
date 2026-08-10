@@ -1,0 +1,51 @@
+# SMoEA Router default configuration
+# 所有超參數與路徑的唯一定義處。指令列可用 --set key=value 覆蓋單項。
+# 任務集合不在此列舉：ID 任務由掃描 dataset/train_data 自動推導，
+# OOD 任務 = dataset/test_data 中有測試檔但無訓練檔的任務。
+
+paths:
+  dataset_dir: dataset            # 之下需有 train_data/ 與 test_data/
+  assets_dir: assets              # build_router_assets 的輸出（嵌入快取、指紋、校準庫）
+  results_dir: results            # 評測輸出 json
+  adapter_dir: adapter            # LoRA adapters（router 本身不讀，供下游載入）
+
+data:
+  field: input                    # 樣本檔中作為 query 文本的欄位
+  doc_clip_chars: 3000            # 文本截斷長度（TF-IDF / BM25 / 裁決 prompt 共用）
+
+embedding:
+  model_name: BAAI/bge-large-en-v1.5
+  batch_size: 64
+  device: cuda                    # 無 GPU 時自動退回 cpu
+
+split:                            # train 樣本切分（逐任務、種子固定）
+  fractions: [0.8, 0.2]           # 指紋堆 / 校準堆（封板值；改動即無法復現封板資產）
+  seed: 42
+
+fingerprint:
+  k_max: 8                        # 多質心上限
+  min_silhouette: 0.08            # silhouette 低於此值不展開（k=1）
+  sil_sample: 1000                # silhouette 抽樣上限（大任務加速）
+
+units:
+  sim_threshold: 0.97             # 指紋 cosine 相似度超過此值的任務併為路由單位
+
+lexical:
+  tfidf_max_features: 50000
+
+thresholds:                       # 四區分流的三條線 + 裁決線
+  transfer_floor: 0.10            # margin 直判線：全域 unit margin 超過即直判路由
+  p_lo: 0.02                      # 紅區線：conformal p 值低於此即拒絕（誤拒率預算）
+  p_hi: 0.10                      # 送審上界：p 值在 [p_lo, p_hi) 進送審
+  theta_verify: 0.5               # 送審裁決：LLM 是非題 yes 機率達此值才路由
+
+verifier:
+  model_path: meta-llama/Llama-3.1-8B-Instruct   # 可填本地路徑
+  example_max_chars: 300
+  checkpoint_every: 50            # 送審打分每 N 筆 flush 一次（可中斷續跑）
+
+evaluation:
+  ood_groundtruth: null           # 任務級人工標記 json 的路徑；null = 無標記模式
+                                  # （無標記時 OOD 段輸出行為描述統計、不輸出 acc，
+                                  #   overall 欄位取消、只報 ID acc）
+  ood_top_routes: 3               # 無標記模式下 per-task 報告的路由去向數

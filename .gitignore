@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# 建置產物與大檔（可由 build_router_assets.py 重建；
+# 唯一例外：unit_descriptions.json 是人工校訂資產，保留進版控）
+assets/*.npz
+assets/*.pkl
+assets/build_summary.json
+assets/calibration_bank.json
+assets/centroids_summary.json
+assets/unit_examples.json
+assets/router_assets_meta.json
+
+# 評測輸出（log 與結果 json 各自另行歸檔）
+results/
+
+# 資料與模型（體積大，不進 git；以 tar/共用儲存另行傳輸，
+# 位置寫在 README 的 Reproduce 段）
+dataset/
+adapter/
+*.safetensors
+*.bin
+*.pt

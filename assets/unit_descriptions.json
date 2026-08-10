@@ -1,0 +1,571 @@
+{
+ "note": "50-task 重編號版；描述文字與 53 條版逐字相同",
+ "units": {
+  "0": [
+   35,
+   46,
+   47
+  ],
+  "1": [
+   41,
+   42,
+   43
+  ],
+  "2": [
+   0
+  ],
+  "3": [
+   1
+  ],
+  "4": [
+   2
+  ],
+  "5": [
+   3
+  ],
+  "6": [
+   4
+  ],
+  "7": [
+   5
+  ],
+  "8": [
+   6
+  ],
+  "9": [
+   7
+  ],
+  "10": [
+   8
+  ],
+  "11": [
+   9
+  ],
+  "12": [
+   10
+  ],
+  "13": [
+   11
+  ],
+  "14": [
+   12
+  ],
+  "15": [
+   13
+  ],
+  "16": [
+   14
+  ],
+  "17": [
+   15
+  ],
+  "18": [
+   16
+  ],
+  "19": [
+   17
+  ],
+  "20": [
+   18
+  ],
+  "21": [
+   19
+  ],
+  "22": [
+   20
+  ],
+  "23": [
+   21
+  ],
+  "24": [
+   22
+  ],
+  "25": [
+   23
+  ],
+  "26": [
+   24
+  ],
+  "27": [
+   25
+  ],
+  "28": [
+   26
+  ],
+  "29": [
+   27
+  ],
+  "30": [
+   28
+  ],
+  "31": [
+   29
+  ],
+  "32": [
+   30
+  ],
+  "33": [
+   31
+  ],
+  "34": [
+   32
+  ],
+  "35": [
+   33
+  ],
+  "36": [
+   34
+  ],
+  "37": [
+   36
+  ],
+  "38": [
+   37
+  ],
+  "39": [
+   38
+  ],
+  "40": [
+   39
+  ],
+  "41": [
+   40
+  ],
+  "42": [
+   44
+  ],
+  "43": [
+   45
+  ],
+  "44": [
+   48
+  ],
+  "45": [
+   50
+  ]
+ },
+ "descriptions": {
+  "0": {
+   "tasks": [
+    "t35",
+    "t46",
+    "t47"
+   ],
+   "task_names": [
+    "multirc_multi_sentence_evidence_reasoning",
+    "squad_extractive_reading_comprehension",
+    "squad_v2_unanswerable_reading_comprehension"
+   ],
+   "description": "Passage-based extractive question answering: the input is a passage followed by a question (sometimes with a candidate answer to verify); answer or judge using only the passage, some questions being unanswerable, outputting a short answer."
+  },
+  "1": {
+   "tasks": [
+    "t41",
+    "t42",
+    "t43"
+   ],
+   "task_names": [
+    "arc_challenge_science_reasoning",
+    "arc_easy_science_question_answering",
+    "openbookqa_science_fact_reasoning"
+   ],
+   "description": "Science multiple-choice question answering: choose the correct answer to a science exam question using scientific knowledge and reasoning, outputting the selected option."
+  },
+  "2": {
+   "tasks": [
+    "t0"
+   ],
+   "task_names": [
+    "task275_enhanced_wsc_paraphrase_generation"
+   ],
+   "description": "Controlled sentence rewriting: modify the given sentence according to a specified change aspect (e.g., tense, number, gender, voice, adverb), outputting the rewritten sentence."
+  },
+  "3": {
+   "tasks": [
+    "t1"
+   ],
+   "task_names": [
+    "task281_points_of_correspondence"
+   ],
+   "description": "Cross-sentence correspondence: the input is three numbered sentences (\"1: ... 2: ... 3: ...\") with no instruction; identify a noun phrase or event shared by all three, outputting the corresponding spans."
+  },
+  "4": {
+   "tasks": [
+    "t2"
+   ],
+   "task_names": [
+    "task769_qed_summarization"
+   ],
+   "description": "Title generation: the input is a bare text passage with no question or instruction attached; produce a short title (1-5 words) capturing its main focus, outputting only the title."
+  },
+  "5": {
+   "tasks": [
+    "t3"
+   ],
+   "task_names": [
+    "task148_afs_argument_quality_gay_marriage"
+   ],
+   "description": "Argument quality assessment: judge whether an argument discussing gay marriage is a clearly interpretable, on-topic argument, outputting Valid or Invalid."
+  },
+  "6": {
+   "tasks": [
+    "t4"
+   ],
+   "task_names": [
+    "task244_count_elements_in_set_union"
+   ],
+   "description": "Set arithmetic: count the number of elements in the union of two given integer sets, outputting a single number."
+  },
+  "7": {
+   "tasks": [
+    "t5"
+   ],
+   "task_names": [
+    "task621_ohsumed_yes_no_numerical_answer_generation"
+   ],
+   "description": "Numerical-data detection: indicate whether numerical data plays a key role in a given medical abstract, outputting Yes or No."
+  },
+  "8": {
+   "tasks": [
+    "t6"
+   ],
+   "task_names": [
+    "task746_yelp_restaurant_review_classification"
+   ],
+   "description": "Sentiment classification: classify a restaurant review as positive or negative based on its content, outputting one of the two labels."
+  },
+  "9": {
+   "tasks": [
+    "t7"
+   ],
+   "task_names": [
+    "task1339_peixian_equity_evaluation_corpus_text_completion"
+   ],
+   "description": "Emotion-based sentence completion: fill the blank in a sentence with a word matching the given emotion (fear, joy, anger, sadness), outputting the completed sentence."
+  },
+  "10": {
+   "tasks": [
+    "t8"
+   ],
+   "task_names": [
+    "task1501_dstc3_answer_generation"
+   ],
+   "description": "Task-oriented dialogue question answering: given a conversation between an automated system and a user searching for pubs, restaurants or coffee shops in Cambridge, answer a question about the dialogue, outputting a short answer."
+  },
+  "11": {
+   "tasks": [
+    "t9"
+   ],
+   "task_names": [
+    "task1669_md_gender_bias_text_modification"
+   ],
+   "description": "Gendered text modification: the input is a single ordinary sentence with no instruction; replace female or gender-neutral pronouns with male pronouns (or add a male-gendered word if none), outputting the modified sentence."
+  },
+  "12": {
+   "tasks": [
+    "t10"
+   ],
+   "task_names": [
+    "gsm8k_self_instruct_subset"
+   ],
+   "description": "Grade-school math word problem solving: the input is a short real-life word problem in plain text with no instruction; solve it step by step, outputting the reasoning and the final numeric answer."
+  },
+  "13": {
+   "tasks": [
+    "t11"
+   ],
+   "task_names": [
+    "physics_en_subset"
+   ],
+   "description": "Physics problem solving: solve the given physics problem step by step, outputting the reasoning and the final answer."
+  },
+  "14": {
+   "tasks": [
+    "t12"
+   ],
+   "task_names": [
+    "finance_instruct_500k_user_filtered_subset"
+   ],
+   "description": "Finance assistance: answer a finance-related instruction or question accurately as a financial assistant, outputting a free-form answer."
+  },
+  "15": {
+   "tasks": [
+    "t13"
+   ],
+   "task_names": [
+    "smolinstruct_filtered_short_chemistry_subset"
+   ],
+   "description": "Chemistry assistance: answer a question about small molecules or molecular properties (e.g., given SMILES strings), outputting a concise chemistry answer."
+  },
+  "16": {
+   "tasks": [
+    "t14"
+   ],
+   "task_names": [
+    "bioinstruct_filtered_subset"
+   ],
+   "description": "Biomedical assistance: answer a biology or biomedical instruction or question accurately, outputting a free-form answer."
+  },
+  "17": {
+   "tasks": [
+    "t15"
+   ],
+   "task_names": [
+    "Computer Science / CodeAlpaca"
+   ],
+   "description": "Programming assistance: generate, explain or debug code for a programming or computer-science instruction, outputting code or a technical answer."
+  },
+  "18": {
+   "tasks": [
+    "t16"
+   ],
+   "task_names": [
+    "Statistics / Data Science Instruct"
+   ],
+   "description": "Statistics and data-science assistance: answer questions on statistical concepts, hypothesis testing, data analysis or model evaluation, outputting a technical answer."
+  },
+  "19": {
+   "tasks": [
+    "t17"
+   ],
+   "task_names": [
+    "cot_creak_commonsense_fact_verification"
+   ],
+   "description": "Commonsense fact verification: answer a yes/no factual claim question with step-by-step reasoning, outputting the final yes/no answer."
+  },
+  "20": {
+   "tasks": [
+    "t18"
+   ],
+   "task_names": [
+    "cot_ecqa_commonsense_multiple_choice"
+   ],
+   "description": "Commonsense multiple-choice question answering: reason step by step and choose the correct answer to an everyday commonsense question, outputting the selected option."
+  },
+  "21": {
+   "tasks": [
+    "t19"
+   ],
+   "task_names": [
+    "cot_esnli_natural_language_inference"
+   ],
+   "description": "Natural language inference: determine whether a hypothesis is entailed by, contradicts, or is neutral to a given premise, outputting the relation label."
+  },
+  "22": {
+   "tasks": [
+    "t20"
+   ],
+   "task_names": [
+    "cot_qasc_science_question_answering"
+   ],
+   "description": "Science question answering with fact chaining: answer a science question by combining relevant scientific facts step by step, outputting the final answer."
+  },
+  "23": {
+   "tasks": [
+    "t21"
+   ],
+   "task_names": [
+    "cot_sensemaking_commonsense_plausibility"
+   ],
+   "description": "Commonsense plausibility judgment: identify which of the given sentences is sensible or nonsensical using real-world knowledge, outputting the selected option."
+  },
+  "24": {
+   "tasks": [
+    "t22"
+   ],
+   "task_names": [
+    "cot_strategyqa_implicit_multistep_reasoning"
+   ],
+   "description": "Implicit multi-step yes/no reasoning: answer a yes/no question that requires decomposing into hidden reasoning steps, outputting the final yes/no answer."
+  },
+  "25": {
+   "tasks": [
+    "t23"
+   ],
+   "task_names": [
+    "stream_aqua_math_multiple_choice_reasoning"
+   ],
+   "description": "Math multiple-choice problem solving: solve the problem step by step and choose the correct option, outputting the selected option."
+  },
+  "26": {
+   "tasks": [
+    "t24"
+   ],
+   "task_names": [
+    "stream_qed_explanation_reasoning"
+   ],
+   "description": "Explanation-based question answering: produce a coherent stream of reasoning for a question (often passage-based) and give the final answer."
+  },
+  "27": {
+   "tasks": [
+    "t25"
+   ],
+   "task_names": [
+    "ruozhibench_misleading_premise_reasoning"
+   ],
+   "description": "Flawed-premise question handling: detect misleading premises, logical fallacies or absurd assumptions in a question, point them out, and respond helpfully."
+  },
+  "28": {
+   "tasks": [
+    "t26"
+   ],
+   "task_names": [
+    "algebra_linear_equation_reasoning"
+   ],
+   "description": "Linear equation solving: solve the given linear equation for the variable, outputting the answer."
+  },
+  "29": {
+   "tasks": [
+    "t27"
+   ],
+   "task_names": [
+    "social_iqa_commonsense_reasoning"
+   ],
+   "description": "Social commonsense reasoning: answer questions about intentions, emotions and likely reactions in social situations, outputting a short answer."
+  },
+  "30": {
+   "tasks": [
+    "t28"
+   ],
+   "task_names": [
+    "wiqa_causal_process_reasoning"
+   ],
+   "description": "Causal process reasoning: determine how a hypothetical change affects an outcome within a scientific or everyday process, outputting the direction of the effect."
+  },
+  "31": {
+   "tasks": [
+    "t29"
+   ],
+   "task_names": [
+    "quarel_qualitative_physics_reasoning"
+   ],
+   "description": "Qualitative physics reasoning: choose the correct answer using qualitative physical relations (e.g., friction, speed, heat), outputting the selected option."
+  },
+  "32": {
+   "tasks": [
+    "t30"
+   ],
+   "task_names": [
+    "quartz_passage_grounded_science_reasoning"
+   ],
+   "description": "Passage-grounded science reasoning: use the given scientific passage to answer the question, outputting the correct option or phrase."
+  },
+  "33": {
+   "tasks": [
+    "t31"
+   ],
+   "task_names": [
+    "sciq_science_question_answering"
+   ],
+   "description": "Science question answering: answer the science question using the provided context or general scientific knowledge, outputting a short answer."
+  },
+  "34": {
+   "tasks": [
+    "t32"
+   ],
+   "task_names": [
+    "cos_e_commonsense_explanation_reasoning"
+   ],
+   "description": "Commonsense explanation reasoning: use commonsense to answer the question or provide the appropriate explanation, outputting a short answer."
+  },
+  "35": {
+   "tasks": [
+    "t33"
+   ],
+   "task_names": [
+    "copa_event_causal_reasoning"
+   ],
+   "description": "Event causal choice: choose the more plausible cause or effect of the given event from two alternatives, outputting the selected option."
+  },
+  "36": {
+   "tasks": [
+    "t34"
+   ],
+   "task_names": [
+    "drop_discrete_numerical_reading_reasoning"
+   ],
+   "description": "Discrete numerical reading comprehension: answer questions over a passage requiring counting, arithmetic or comparison, outputting a number or short span."
+  },
+  "37": {
+   "tasks": [
+    "t36"
+   ],
+   "task_names": [
+    "definite_pronoun_reference_resolution"
+   ],
+   "description": "Pronoun reference resolution: resolve which entity an ambiguous pronoun refers to using linguistic and commonsense cues, outputting the referent."
+  },
+  "38": {
+   "tasks": [
+    "t37"
+   ],
+   "task_names": [
+    "winogrande_commonsense_coreference_reasoning"
+   ],
+   "description": "Fill-in-the-blank coreference: choose the correct word or entity for the blank using sentence context and commonsense, outputting the choice."
+  },
+  "39": {
+   "tasks": [
+    "t38"
+   ],
+   "task_names": [
+    "hellaswag_event_continuation_reasoning"
+   ],
+   "description": "Event continuation selection: choose the most plausible continuation of the described situation, outputting the selected option."
+  },
+  "40": {
+   "tasks": [
+    "t39"
+   ],
+   "task_names": [
+    "cosmosqa_narrative_commonsense_reasoning"
+   ],
+   "description": "Narrative commonsense question answering: use narrative context and commonsense to choose the best answer about the story, outputting the selected option."
+  },
+  "41": {
+   "tasks": [
+    "t40"
+   ],
+   "task_names": [
+    "piqa_physical_commonsense_reasoning"
+   ],
+   "description": "Physical commonsense choice: choose the more practical solution to an everyday physical goal, outputting the selected option."
+  },
+  "42": {
+   "tasks": [
+    "t44"
+   ],
+   "task_names": [
+    "coqa_conversational_reading_comprehension"
+   ],
+   "description": "Conversational reading comprehension: the input is a story followed by alternating question-answer turns ending with a new question; answer that final question from the story and the dialogue, outputting a short answer."
+  },
+  "43": {
+   "tasks": [
+    "t45"
+   ],
+   "task_names": [
+    "quac_contextual_conversational_question_answering"
+   ],
+   "description": "Contextual conversational question answering: answer the question from the given conversational context, outputting a short answer."
+  },
+  "44": {
+   "tasks": [
+    "t48"
+   ],
+   "task_names": [
+    "record_passage_entity_reasoning"
+   ],
+   "description": "Cloze-style entity filling: the input is a passage followed by a statement containing a blank or placeholder; fill the missing entity or phrase using the passage, outputting the entity."
+  },
+  "45": {
+   "tasks": [
+    "t50"
+   ],
+   "task_names": [
+    "triviaqa_open_domain_factual_question_answering"
+   ],
+   "description": "Open-domain trivia question answering: answer a factual question using general world knowledge (no passage provided), outputting the answer."
+  }
+ }
+}
