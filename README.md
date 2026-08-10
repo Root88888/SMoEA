@@ -85,7 +85,7 @@ python main.py --mode batch
 
 ## 從哪裡下手
 
-- **拒絕分支（Adapter Merging）**：入口 `system/rejection.py`——
+- **拒絕分支（Model Merging）**：入口 `system/rejection.py`——
   介面、可用的診斷素材、與已備妥的合成/載入/生成機制
   （`InferenceEngine.load_adapters_merged`）全寫在該檔檔頭；
   只需實作「用哪些 adapter、各配多少權重」的決策。
