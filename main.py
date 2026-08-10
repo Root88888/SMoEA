@@ -5,7 +5,7 @@ main.py — SMoEA 主程式：query → Router → adapter → inference → out
 
 架構圖對應：Router 分流之後，路由樣本
 由 system/InferenceEngine 載對應任務 adapter 生成（本檔完成）；拒絕
-樣本進 Adapter Merging 分支（接口 system/rejection.py，待實作——
+樣本進 Model Merging 分支（接口 system/rejection.py，待實作——
 目前拒絕樣本會印明去向並跳過生成）。
 
 【互動模式】單筆 query 跑完整流程並顯示 router 逐步判定：
@@ -83,7 +83,7 @@ def swap_verify(cfg, rt, engine, texts, dec):
 # 診斷
 # ---------------------------------------------------------------------------
 def diagnosis_of(rt, dec, row):
-    """單筆 decide 結果 → 標準化診斷 dict"""
+    """單筆 decide 結果 → 標準化診斷 dict（互動列印與拒絕分支共用）。"""
     top_u = [int(u) for u in dec["top3_units"][row]]
     tS = dec["tS"][row]
     top_tasks, top_sims = [], []
@@ -120,6 +120,15 @@ def run_interactive(cfg, rt, preload=True):
     vmode = cfg["system"]["verifier_mode"]
     scorer = make_verifier(cfg, vmode)
     descs = rt.load_descriptions() if vmode != "off" else None
+    if descs is not None:
+        miss = [u for u in range(len(rt.units)) if str(u) not in descs]
+        if miss:
+            raise ValueError(
+                f"單位說明書缺 {len(miss)} 個單位（如 unit {miss[:5]}）——"
+                f"assets/unit_descriptions.json 與當前路由資產版本不符。"
+                f"常見原因：dataset 任務集合與說明書生成時不同"
+                f"（多/少了任務）。請對齊任務集合重 build，"
+                f"或更新說明書後重試")
     if preload:
         print("[warmup] 預載嵌入模型…", flush=True)
         rt._embed(["warmup"])          # bge 首載也在開場完成
