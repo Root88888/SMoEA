@@ -72,7 +72,7 @@ docs/                       架構圖與文件
 
    首次執行自動下載生成與裁決模型（各約 16GB）。輸入任務內 query
    應看到 Router 判定與模型回答；輸入無關文字應看到進入
-   Adapter Merging 分支的訊息（即 `system/rejection.py` 的呼叫點）。
+   Model Merging 分支的訊息（即 `system/rejection.py` 的呼叫點）。
  
 5. 批次執行
 ```bash
