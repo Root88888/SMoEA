@@ -16,16 +16,16 @@ router/                     路由決策層
   fingerprint.py units.py   任務指紋、多質心、路由單位
   lexical.py conformal.py   詞彙一致性訊號、共形校準與四區判定
   verifier.py               送審 LLM 是非題裁決
-  metrics.py                評測計分（指標定義見檔頭）
+  metrics.py                評測計分
 system/                     路由之後的執行層
   inference.py              InferenceEngine：base model 常駐、
                             per-task adapter 熱切換、生成
   rejection.py              拒絕分支（Model Merging）介面
 scripts/
-  check_env.py              環境體檢（任何異常先跑這支）
+  check_env.py              環境體檢
   selftest_*.py             三支自測（零資料零 GPU）
   build_router_assets.py    路由資產離線建置（掃 dataset 自動推導任務集合）
-  eval_router.py            路由評測三段（decide → score → run）
+  eval_router.py            路由評測三段
   eval_baseline_*.py        兩支 baseline
   verify_flow_table.py      評測結果獨立重放驗證
   plot_centroids.py         質心結構圖
@@ -36,8 +36,8 @@ dataset/                    任務樣本（不進 git）
 adapter/task{N}/            LoRA adapters（不進 git）：目錄內直接放
                             adapter 檔，或多個 checkpoint-*/ 自動取最新
 assets/                     路由建置產物；unit_descriptions.json 為
-                            人工校訂的單位說明書（唯一進 git 的資產）
-results/                    評測與批次輸出（不進 git）
+                            人工校訂的單位說明書
+results/                    評測與批次輸出
 docs/                       架構圖與文件
 ```
 
