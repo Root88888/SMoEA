@@ -3,7 +3,7 @@
 """
 main.py — SMoEA 主程式：query → Router → adapter → inference → output
 
-架構圖對應：Router 分流（router/ 套件，封板 v7 系統）之後，路由樣本
+架構圖對應：Router 分流之後，路由樣本
 由 system/InferenceEngine 載對應任務 adapter 生成（本檔完成）；拒絕
 樣本進 Adapter Merging 分支（接口 system/rejection.py，待實作——
 目前拒絕樣本會印明去向並跳過生成）。
@@ -161,7 +161,7 @@ def run_interactive(cfg, rt, preload=True):
                   f" → 進入 Adapter Merging 分支")
             try:
                 from system.rejection import handle_rejection
-                out = handle_rejection(q, d, engine)
+                out = handle_rejection(q, engine)
                 print(f"[Output]\n{out}")
             except NotImplementedError as e:
                 print(f"[System] {e}")
