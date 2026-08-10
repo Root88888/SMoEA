@@ -9,10 +9,10 @@
 #   bash scripts/setup_workspace.sh
 #
 # ─────────────────────────────────────────────────────────────────────────────
-# 【需自行準備】（腳本會逐項檢查，缺哪項會明講）
+# 【需自行準備】（腳本會逐項檢查）
 #   1. conda（miniconda 即可）與 NVIDIA 驅動已安裝
 #   2. 任務樣本 → dataset/train_data/、dataset/test_data/
-#        task{N}_train.json / task{N}_test.json，向專案負責人索取
+#        task{N}_train.json / task{N}_test.json
 #   3. adapters → adapter/task{N}/（自 Google Drive 下載解壓後攤平放入；
 #        每個任務一個目錄，內含 adapter 檔或 checkpoint-*/）
 #   （單位說明書 assets/unit_descriptions.json 隨 repo 自帶，無需準備）
@@ -28,32 +28,53 @@ echo "== SMoEA workspace setup @ $(pwd) =="
 fail() { echo "✗ $1"; echo "  → $2"; exit 1; }
 
 # ---- 0/4 檢查「需自行準備」清單 ----
-command -v conda >/dev/null || fail "找不到 conda" "安裝 miniconda 後重跑"
 [ "$(ls dataset/train_data/task*.json* 2>/dev/null | wc -l)" -ge 1 ] \
-  || fail "dataset/train_data/ 沒有任務樣本"
+  || fail "dataset/train_data/ 沒有任務樣本" 
 [ "$(ls dataset/test_data/task*.json* 2>/dev/null | wc -l)" -ge 1 ] \
-  || fail "dataset/test_data/ 沒有測試樣本"
+  || fail "dataset/test_data/ 沒有測試樣本" 
 [ -f assets/unit_descriptions.json ] \
-  || fail "缺 assets/unit_descriptions.json（repo 自帶）"
+  || fail "缺 assets/unit_descriptions.json（repo 應自帶）" "clone 不完整——git pull 或重新 clone"
 [ "$(ls -d adapter/task* 2>/dev/null | wc -l)" -ge 1 ] \
   || fail "adapter/ 沒有任務目錄" "自 Google Drive 下載解壓後放入"
 echo "[0/4] 需自行準備的檔案齊全"
 echo "      樣本 train $(ls dataset/train_data | wc -l) / test $(ls dataset/test_data | wc -l) 檔、adapter $(ls -d adapter/task* | wc -l) 個任務"
 
-# ---- 1/4 conda env（不存在則建置；名稱 smoea）----
-source "$(conda info --base)/etc/profile.d/conda.sh"
-while [ -n "${CONDA_DEFAULT_ENV:-}" ]; do conda deactivate; done
-if ! conda env list | grep -qE '^smoea\s'; then
-    echo "[1/4] 建置 conda env smoea（首次含 torch 下載，約 10-20 分鐘）…"
-    conda create -y -n smoea python=3.12
-    conda activate smoea
-    export PYTHONNOUSERSITE=1
-    python -m pip install -r requirements-lock-twcc.txt
+# ---- 1/4 conda env ----
+# 已 activate 某個環境（非 base）→ 直接使用、不另建；
+# 否則尋找/建置具名 env「smoea」。conda 不在 PATH 時自動到常見
+# 安裝位置尋找（部分容器/機器的 shell 不會自動初始化 conda）。
+ensure_deps() {
+    python -c "import numpy, scipy, sklearn, torch, transformers, peft" 2>/dev/null \
+      || { echo "      依賴不全，安裝鎖定依賴（含 torch 下載，首次 10-20 分鐘）…"; \
+           python -m pip install -r requirements-lock-twcc.txt; }
+}
+act() {   # conda activate/deactivate 與 set -u 的相容包裝
+    set +u; conda "$@"; set -u
+}
+if [ -n "${CONDA_DEFAULT_ENV:-}" ] && [ "${CONDA_DEFAULT_ENV}" != "base" ]; then
+    echo "[1/4] 使用當前已啟用的環境：${CONDA_DEFAULT_ENV}"
 else
-    echo "[1/4] conda env smoea 已存在，跳過建置"
-    conda activate smoea
-    export PYTHONNOUSERSITE=1
+    if ! command -v conda >/dev/null 2>&1; then
+        for c in ~/miniconda3 ~/anaconda3 /opt/conda /opt/miniconda3; do
+            [ -f "$c/etc/profile.d/conda.sh" ] && source "$c/etc/profile.d/conda.sh" && break
+        done
+    fi
+    command -v conda >/dev/null 2>&1 \
+      || fail "找不到 conda" "安裝 miniconda；或先手動 activate 你的環境再重跑本腳本"
+    source "$(conda info --base)/etc/profile.d/conda.sh"
+    while [ -n "${CONDA_DEFAULT_ENV:-}" ]; do act deactivate; done
+    if ! conda env list | grep -qE '^smoea\s'; then
+        echo "[1/4] 建置 conda env smoea…"
+        conda create -y -n smoea python=3.12
+    else
+        echo "[1/4] conda env smoea 已存在"
+    fi
+    act activate smoea
 fi
+export PYTHONNOUSERSITE=1
+ensure_deps
+# 把防護固化進 env：之後單獨 conda activate 也自帶（README 步驟 4 的前提）
+conda env config vars set PYTHONNOUSERSITE=1 >/dev/null 2>&1 || true
 
 # ---- 2/4 環境體檢 ----
 echo "[2/4] 環境體檢"
@@ -72,7 +93,7 @@ fi
 echo
 echo "== 全部就緒 =="
 echo "之後每次開終端機："
-echo "  conda activate smoea"
+echo "  conda activate ${CONDA_DEFAULT_ENV:-smoea}"
 echo "測試（互動模式；輸入域外 query 會進 system/rejection.py；"
 echo "首次執行會自動下載 base model 與裁決模型，各 ~16GB）："
 echo "  python main.py --mode interactive"
