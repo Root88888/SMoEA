@@ -9,7 +9,7 @@
 #   bash scripts/setup_workspace.sh
 #
 # ─────────────────────────────────────────────────────────────────────────────
-# 【需自行準備】（腳本會逐項檢查）
+# 【需自行準備】（腳本會逐項檢查，缺哪項會明講）
 #   1. conda（miniconda 即可）與 NVIDIA 驅動已安裝
 #   2. 任務樣本 → dataset/train_data/、dataset/test_data/
 #        task{N}_train.json / task{N}_test.json
@@ -17,7 +17,8 @@
 #        每個任務一個目錄，內含 adapter 檔或 checkpoint-*/）
 #   （單位說明書 assets/unit_descriptions.json 隨 repo 自帶，無需準備）
 #
-# 【腳本代辦】conda env 建置＋鎖定依賴、環境體檢、查詢嵌入計算
+# 【腳本代辦】conda env 建置（於專案內 .conda/smoea，與既有環境完全
+# 隔離）＋鎖定依賴、環境體檢、查詢嵌入計算
 # （首次自動下載嵌入模型 ~1.3GB；GPU 數分鐘）、路由資產建置。
 # base model 與裁決模型（各 ~16GB）會在首次執行 main.py 時自動下載。
 # =============================================================================
@@ -29,13 +30,13 @@ fail() { echo "✗ $1"; echo "  → $2"; exit 1; }
 
 # ---- 0/4 檢查「需自行準備」清單 ----
 [ "$(ls dataset/train_data/task*.json* 2>/dev/null | wc -l)" -ge 1 ] \
-  || fail "dataset/train_data/ 沒有任務樣本" 
+  || fail "dataset/train_data/ 沒有任務樣本"
 [ "$(ls dataset/test_data/task*.json* 2>/dev/null | wc -l)" -ge 1 ] \
-  || fail "dataset/test_data/ 沒有測試樣本" 
+  || fail "dataset/test_data/ 沒有測試樣本"
 [ -f assets/unit_descriptions.json ] \
-  || fail "缺 assets/unit_descriptions.json（repo 應自帶）" "clone 不完整——git pull 或重新 clone"
+  || fail "缺 assets/unit_descriptions.json（repo 自帶）"
 [ "$(ls -d adapter/task* 2>/dev/null | wc -l)" -ge 1 ] \
-  || fail "adapter/ 沒有任務目錄" "自 Google Drive 下載解壓後放入"
+  || fail "adapter/ 沒有任務目錄" "自 Google Drive"
 echo "[0/4] 需自行準備的檔案齊全"
 echo "      樣本 train $(ls dataset/train_data | wc -l) / test $(ls dataset/test_data | wc -l) 檔、adapter $(ls -d adapter/task* | wc -l) 個任務"
 
@@ -63,13 +64,16 @@ else
       || fail "找不到 conda" "安裝 miniconda；或先手動 activate 你的環境再重跑本腳本"
     source "$(conda info --base)/etc/profile.d/conda.sh"
     while [ -n "${CONDA_DEFAULT_ENV:-}" ]; do act deactivate; done
-    if ! conda env list | grep -qE '^smoea\s'; then
-        echo "[1/4] 建置 conda env smoea…"
-        conda create -y -n smoea python=3.12
+    # 環境建在專案資料夾內（.conda/smoea）：與使用者既有環境完全隔離、
+    # 不撞名；刪除專案目錄即完整移除
+    ENV_DIR="$(pwd)/.conda/smoea"
+    if [ ! -x "$ENV_DIR/bin/python" ]; then
+        echo "[1/4] 於專案內建置 conda env（$ENV_DIR）…"
+        conda create -y -p "$ENV_DIR" python=3.12
     else
-        echo "[1/4] conda env smoea 已存在"
+        echo "[1/4] 專案內 conda env 已存在（$ENV_DIR）"
     fi
-    act activate smoea
+    act activate "$ENV_DIR"
 fi
 export PYTHONNOUSERSITE=1
 ensure_deps
@@ -92,8 +96,8 @@ fi
 # ---- 4/4 完成 ----
 echo
 echo "== 全部就緒 =="
-echo "之後每次開終端機："
-echo "  conda activate ${CONDA_DEFAULT_ENV:-smoea}"
+echo "之後每次開終端機（在任何目錄皆可執行）："
+echo "  conda activate ${CONDA_PREFIX}"
 echo "測試（互動模式；輸入域外 query 會進 system/rejection.py；"
 echo "首次執行會自動下載 base model 與裁決模型，各 ~16GB）："
 echo "  python main.py --mode interactive"
