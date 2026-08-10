@@ -12,10 +12,10 @@
 # 【需自行準備】（腳本會逐項檢查，缺哪項會明講）
 #   1. conda（miniconda 即可）與 NVIDIA 驅動已安裝
 #   2. 任務樣本 → dataset/train_data/、dataset/test_data/
-#        task{N}_train.json / task{N}_test.json
-#   3. 單位說明書 → assets/unit_descriptions.json
-#   4. adapters → adapter/task{N}/（自 Google Drive 下載解壓後攤平放入；
+#        task{N}_train.json / task{N}_test.json，向專案負責人索取
+#   3. adapters → adapter/task{N}/（自 Google Drive 下載解壓後攤平放入；
 #        每個任務一個目錄，內含 adapter 檔或 checkpoint-*/）
+#   （單位說明書 assets/unit_descriptions.json 隨 repo 自帶，無需準備）
 #
 # 【腳本代辦】conda env 建置＋鎖定依賴、環境體檢、查詢嵌入計算
 # （首次自動下載嵌入模型 ~1.3GB；GPU 數分鐘）、路由資產建置。
@@ -34,7 +34,7 @@ command -v conda >/dev/null || fail "找不到 conda" "安裝 miniconda 後重�
 [ "$(ls dataset/test_data/task*.json* 2>/dev/null | wc -l)" -ge 1 ] \
   || fail "dataset/test_data/ 沒有測試樣本"
 [ -f assets/unit_descriptions.json ] \
-  || fail "缺 assets/unit_descriptions.json"
+  || fail "缺 assets/unit_descriptions.json（repo 自帶）"
 [ "$(ls -d adapter/task* 2>/dev/null | wc -l)" -ge 1 ] \
   || fail "adapter/ 沒有任務目錄" "自 Google Drive 下載解壓後放入"
 echo "[0/4] 需自行準備的檔案齊全"
