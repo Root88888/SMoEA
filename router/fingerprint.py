@@ -7,8 +7,6 @@ router/fingerprint.py
   - 多質心   = 指紋堆內 KMeans、k 以 silhouette 在 [2, k_max] 掃描重選，
     最佳 silhouette < min_silhouette 則不展開（k=1，用平均）。
     k 在指紋堆內重選（而非沿用全量資料的分群結果）是為了避免校準污染
-    ——質心結構若見過校準堆，可交換前提的「打分函數局外人」條件破產。
-（select_centroids_inpile 照 v4 原文收編。）
 
 【scale up】逐任務獨立；任務擴充自動適應。
 """
