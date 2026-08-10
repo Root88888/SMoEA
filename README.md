@@ -8,7 +8,7 @@
 main.py                     系統入口：interactive / batch 兩模式
 configs/default.yaml        全部設定唯一定義處（路徑、門檻、模型、生成參數；
                             任何設定可用 --set key=value 臨時覆蓋）
-router/                     路由決策層（圖中 Router 方塊）
+router/                     路由決策層
   core.py                   Router 類別：build / save / load / decide /
                             escalate / finalize——路由邏輯唯一所在
   config.py data_io.py      設定載入、資料與嵌入快取 I/O
