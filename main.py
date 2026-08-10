@@ -83,7 +83,7 @@ def swap_verify(cfg, rt, engine, texts, dec):
 # 診斷
 # ---------------------------------------------------------------------------
 def diagnosis_of(rt, dec, row):
-    """單筆 decide 結果 → 標準化診斷 dict（互動列印與拒絕分支共用）。"""
+    """單筆 decide 結果 → 標準化診斷 dict"""
     top_u = [int(u) for u in dec["top3_units"][row]]
     tS = dec["tS"][row]
     top_tasks, top_sims = [], []
