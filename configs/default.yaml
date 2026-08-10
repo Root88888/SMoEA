@@ -49,3 +49,15 @@ evaluation:
                                   # （無標記時 OOD 段輸出行為描述統計、不輸出 acc，
                                   #   overall 欄位取消、只報 ID acc）
   ood_top_routes: 3               # 無標記模式下 per-task 報告的路由去向數
+
+system:                           # 主程式（main.py）：路由後的生成執行層
+  base_model: unsloth/Meta-Llama-3.1-8B
+  adapter_dir: adapter            # adapter/task{N}/（直含 adapter 檔或 checkpoint-*/ 取最新）
+  load_in_4bit: false             # 生成模型量化；須與 MoEA-Trainer 訓練側載入設定一致
+  dtype: float16
+  max_input_tokens: 4096          # prompt 截斷長度（左 padding）
+  max_new_tokens: 512             # 照 MoEA-Trainer inference 設定
+  batch_size: 8                   # 批次模式生成 batch（單卡保守值；多卡可調 28）
+  verifier_mode: resident_4bit    # 互動模式送審裁決：resident_4bit（裁決模型 4bit 常駐，
+                                  #   與生成模型共存）| swap（分時載卸，慢但精度同封板）
+                                  #   | off（無裁決，送審一律拒絕 fail-closed）

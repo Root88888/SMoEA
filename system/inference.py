@@ -1,0 +1,186 @@
+# -*- coding: utf-8 -*-
+"""
+system/inference.py
+
+【生成執行層】路由決定去向之後的執行者：載入 base model
+（unsloth/Meta-Llama-3.1-8B）、按任務熱切換 LoRA adapter、生成輸出。
+對應架構圖的「ID Adapter → Inference → Output」一段。
+
+生成行為照 MoEA-Trainer/inference_script2.py 原設定收編：
+  prompt      = 樣本的 full_prompt 原文（base model 不套 chat template），
+                前補 bos token
+  tokenize    = 左 padding、truncation
+  解碼        = 貪婪（do_sample=False）、max_new_tokens=512、
+                eos 併集（end_of_text 與 tokenizer eos 都保留）、
+                stop_strings 防 few-shot 續寫、取 input 之後段、
+                skip_special_tokens 解碼
+
+adapter 目錄結構（本 repo convention，扁平）：
+  adapter/task{N}/                  直接含 adapter 檔（adapter_config.json…）
+  adapter/task{N}/checkpoint-*/     或多 checkpoint——自動 sort -V 取最新
+
+【拒絕分支接口】load_adapters_merged(weights) 已備妥（PEFT
+add_weighted_adapter）——拒絕分支只需算出權重字典呼叫之，
+見 system/rejection.py。
+
+【scale up】adapter 逐任務獨立、熱切換 O(1) 換卡不重載 base；
+任務擴充只需在 adapter/ 底下加目錄。
+"""
+
+import copy
+import glob
+import os
+import re
+
+STOP_STRINGS = ["\nQ:", "\nQuestion:", "\n\n\n"]   # 照 inference_script2
+
+
+def _sort_v_key(path):
+    """checkpoint-235 式名稱的自然排序鍵（等效 sort -V）。"""
+    nums = re.findall(r"\d+", os.path.basename(path))
+    return [int(x) for x in nums] if nums else [0]
+
+
+def resolve_adapter_path(adapter_dir, task_key):
+    """task{N} → 實際 adapter 路徑。直含 adapter 檔用之；
+    多 checkpoint 取最新（sort -V 尾）。"""
+    root = os.path.join(adapter_dir, task_key)
+    if not os.path.isdir(root):
+        raise FileNotFoundError(
+            f"找不到 adapter 目錄 {root}（convention：adapter/{task_key}/）")
+    if os.path.exists(os.path.join(root, "adapter_config.json")):
+        return root
+    ckpts = sorted(glob.glob(os.path.join(root, "checkpoint-*")),
+                   key=_sort_v_key)
+    if not ckpts:
+        raise FileNotFoundError(
+            f"{root} 內無 adapter_config.json 亦無 checkpoint-*")
+    return ckpts[-1]
+
+
+class InferenceEngine:
+    """base model 常駐、adapter 熱切換的生成引擎。"""
+
+    def __init__(self, cfg):
+        self.cfg = cfg["system"]
+        self.model = None
+        self.tokenizer = None
+        self._loaded_adapters = {}     # task_key -> adapter_name
+        self._active = None            # 目前生效的 adapter_name（None=純 base）
+
+    # ------------------------------------------------------------------
+    # 載入
+    # ------------------------------------------------------------------
+    def load_base(self):
+        if self.model is not None:
+            return
+        import torch
+        from transformers import AutoModelForCausalLM, AutoTokenizer
+        name = self.cfg["base_model"]
+        print(f"[system] 載入 base model {name} "
+              f"({'4bit' if self.cfg['load_in_4bit'] else self.cfg['dtype']})…",
+              flush=True)
+        self.tokenizer = AutoTokenizer.from_pretrained(name)
+        if self.tokenizer.pad_token is None:
+            self.tokenizer.pad_token = self.tokenizer.eos_token
+        self.tokenizer.padding_side = "left"   # 照原設定
+        kw = {"device_map": "auto"}
+        if self.cfg["load_in_4bit"]:
+            from transformers import BitsAndBytesConfig
+            kw["quantization_config"] = BitsAndBytesConfig(
+                load_in_4bit=True, bnb_4bit_compute_dtype=torch.float16)
+        else:
+            kw["torch_dtype"] = getattr(torch, self.cfg["dtype"])
+        self.model = AutoModelForCausalLM.from_pretrained(name, **kw)
+        self.model.eval()
+        print(f"[system] base model 就緒 "
+              f"({next(self.model.parameters()).device})", flush=True)
+
+    def ensure_adapter(self, task_key):
+        """切到指定任務的 adapter（未載過則熱載入）。"""
+        self.load_base()
+        from peft import PeftModel
+        if task_key not in self._loaded_adapters:
+            path = resolve_adapter_path(self.cfg["adapter_dir"], task_key)
+            print(f"[system] 載入 adapter {task_key} ← {path}", flush=True)
+            if not self._loaded_adapters:                 # 第一個 adapter
+                self.model = PeftModel.from_pretrained(
+                    self.model, path, adapter_name=task_key)
+            else:
+                self.model.load_adapter(path, adapter_name=task_key)
+            self._loaded_adapters[task_key] = task_key
+        if self._active != task_key:
+            self.model.set_adapter(task_key)
+            self._active = task_key
+
+    def load_adapters_merged(self, weights, merged_name="merged"):
+        """【拒絕分支用】以權重合成多個任務 adapter 並切換生效。
+
+        weights: {task_key: float}，例 {"task23": 0.6, "task10": 0.4}。
+        合成方式 PEFT add_weighted_adapter(combination_type="linear")。
+        回傳生效的 adapter 名稱。
+        """
+        self.load_base()
+        for tk in weights:
+            self.ensure_adapter(tk)     # 確保成員都已載入
+        names = list(weights.keys())
+        ws = [float(weights[n]) for n in names]
+        if merged_name in getattr(self.model, "peft_config", {}):
+            self.model.delete_adapter(merged_name)
+        self.model.add_weighted_adapter(
+            adapters=names, weights=ws, adapter_name=merged_name,
+            combination_type="linear")
+        self.model.set_adapter(merged_name)
+        self._active = merged_name
+        return merged_name
+
+    def unload(self):
+        """釋放模型（分時載卸模式用）。"""
+        import gc
+        import torch
+        self.model = None
+        self.tokenizer = None
+        self._loaded_adapters, self._active = {}, None
+        gc.collect()
+        torch.cuda.empty_cache()
+
+    # ------------------------------------------------------------------
+    # 生成（照 inference_script2 原設定）
+    # ------------------------------------------------------------------
+    def _generation_config(self):
+        gc_ = copy.deepcopy(self.model.generation_config)
+        gc_.max_new_tokens = int(self.cfg["max_new_tokens"])
+        gc_.pad_token_id = self.tokenizer.pad_token_id
+        eos = gc_.eos_token_id
+        eos_ids = [] if eos is None else ([eos] if isinstance(eos, int)
+                                          else list(eos))
+        if (self.tokenizer.eos_token_id is not None
+                and self.tokenizer.eos_token_id not in eos_ids):
+            eos_ids.append(self.tokenizer.eos_token_id)
+        gc_.eos_token_id = (None if not eos_ids else
+                            eos_ids[0] if len(eos_ids) == 1 else eos_ids)
+        gc_.max_length = None
+        gc_.do_sample = False          # 貪婪、可重現
+        gc_.temperature = None
+        gc_.top_p = None
+        gc_.stop_strings = list(STOP_STRINGS)
+        return gc_
+
+    def generate(self, prompts):
+        """list[str]（full_prompt 原文）→ list[str] 模型輸出。"""
+        import torch
+        assert self.model is not None, "先 ensure_adapter/load_base"
+        bos = self.tokenizer.bos_token
+        ps = [p if (not bos or p.startswith(bos)) else f"{bos}{p}"
+              for p in prompts]
+        inputs = self.tokenizer(
+            ps, return_tensors="pt", padding=True, truncation=True,
+            max_length=int(self.cfg["max_input_tokens"]),
+            add_special_tokens=False)   # bos 已手動補，避免重複
+        inputs = {k: v.to(self.model.device) for k, v in inputs.items()}
+        with torch.no_grad():
+            out = self.model.generate(
+                **inputs, generation_config=self._generation_config(),
+                tokenizer=self.tokenizer)
+        gen = out[:, inputs["input_ids"].shape[1]:]
+        return self.tokenizer.batch_decode(gen, skip_special_tokens=True)

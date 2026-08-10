@@ -24,3 +24,5 @@ adapter/
 *.safetensors
 *.bin
 *.pt
+adapter/
+inference_results/

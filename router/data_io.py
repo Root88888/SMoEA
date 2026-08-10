@@ -118,3 +118,21 @@ def load_ood_groundtruth(path):
         else:
             out[int(k)] = int(re.sub(r"[^0-9]", "", ans))
     return out
+
+
+def load_task_records(cfg, task_id, test=False):
+    """讀一個任務的完整樣本紀錄（instances 原欄位：input / output /
+    instance_id / full_prompt…）。生成執行層（system/）用它取
+    full_prompt 當 prompt；路由層仍走 load_task_texts（field 欄）。"""
+    ds = cfg["paths"]["dataset_dir"]
+    sub = "test_data" if test else "train_data"
+    path = find_file(os.path.join(ds, sub), task_id, test=test)
+    with open(path, encoding="utf-8") as f:
+        obj = json.load(f) if not path.endswith(".jsonl") else \
+            [json.loads(l) for l in f if l.strip()]
+    if isinstance(obj, dict):
+        for k in ("instances", "data", "examples", "samples"):
+            if k in obj:
+                return obj[k]
+        raise ValueError(f"{path}: dict 無 instances 類鍵")
+    return obj
