@@ -41,31 +41,52 @@ results/                    評測與批次輸出（不進 git）
 docs/                       架構圖與文件
 ```
 
-## 環境建置
-**一鍵前置**——環境、資料、adapter、路由資產全部代辦，
-結束即可直接跑 main.py：
+## 上手流程
 
-​```bash
-bash scripts/setup_workspace.sh
-​```
-
-手動建置（其他環境）：
+1. git clone
 ```bash
-pip install -r requirements.txt
-pip install -r requirements-lock-twcc.txt
-
-python scripts/check_env.py            # 環境體檢
-python scripts/selftest_core_modules.py
-python scripts/selftest_end_to_end.py
-python scripts/selftest_main_pipeline.py
+   git clone https://github.com/Root88888/SMoEA.git && cd SMoEA
 ```
+ 
+2. 放置檔案（手動步驟）
+   - 任務樣本：train 檔放 `dataset/train_data/`、test 檔放
+     `dataset/test_data/`（檔名 `task{N}_train.json` / `task{N}_test.json`）
+   - adapters：每任務一個目錄，放成 `adapter/task{N}/`；解壓後若外層
+     多包一層目錄，將其中的 `task*` 移出攤平
+
+3. 一鍵建置
+```bash
+   bash scripts/setup_workspace.sh
+```
+
+   自動完成：檔案檢查（缺漏會明確提示）、conda 環境建置與依賴安裝
+   （首次 10-20 分鐘）、環境體檢、查詢嵌入計算與路由資產建置
+   （首次 GPU 數分鐘）。結尾印出「全部就緒」即完成；中途停止時
+   依提示處理後重跑即可（已完成步驟自動跳過）。
+ 
+4. 執行確認
+```bash
+   conda activate smoea
+   python main.py --mode interactive
+```
+
+   首次執行自動下載生成與裁決模型（各約 16GB）。輸入任務內 query
+   應看到 Router 判定與模型回答；輸入無關文字應看到進入
+   Adapter Merging 分支的訊息（即 `system/rejection.py` 的呼叫點）。
+ 
+5. 批次執行
+```bash
+   python main.py --mode batch          # --tasks a,b 限任務、--limit n 每個任務test set只取前n筆
+```
+ 
+   逐筆結果（含 Router 診斷與模型輸出）落於
+   `results/main_batch_outputs.jsonl`。
+ 
+之後每次開機僅需 `conda activate smoea`；步驟 2、3 為一次性作業。
 
 ## 使用
 
 ```bash
-# 資料與 adapter 就位後，先建路由資產（任務集合自動掃描）：
-python scripts/build_router_assets.py
-
 # 互動：單筆 query 跑完整流程，逐步顯示 Router 判定
 python main.py --mode interactive
 
@@ -91,10 +112,6 @@ python main.py --mode batch
   （`InferenceEngine.load_adapters_merged`）全寫在該檔檔頭；
   只需實作「用哪些 adapter、各配多少權重」的決策。
 - **生成行為**（prompt、解碼參數、adapter 解析）：`system/inference.py`。
-- **路由邏輯**（分數、校準、判定規則）：`router/core.py` 起，
-  各訊號在 router/ 內各自的模組。
-- **評測**：`scripts/eval_router.py` 檔頭有指標定義與執行方式；
-  改動路由後用它加 `scripts/verify_flow_table.py` 驗證。
 - **新增任務**：樣本放 `dataset/`、adapter 放 `adapter/task{N}/`、
   重跑 `build_router_assets.py` 即完成擴充（送審裁決另需在
   `assets/unit_descriptions.json` 補該任務所屬單位的說明）。
