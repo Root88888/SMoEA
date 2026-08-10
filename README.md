@@ -2,7 +2,7 @@
 
 ![architecture](docs/architecture.png)
 
-## 目錄結構（什麼東西在哪裡）
+## 目錄結構
 
 ```
 main.py                     系統入口：interactive / batch 兩模式
@@ -20,7 +20,7 @@ router/                     路由決策層（圖中 Router 方塊）
 system/                     路由之後的執行層
   inference.py              InferenceEngine：base model 常駐、
                             per-task adapter 熱切換、生成
-  rejection.py              拒絕分支（Adapter Merging）介面
+  rejection.py              拒絕分支（Model Merging）介面
 scripts/
   check_env.py              環境體檢（任何異常先跑這支）
   selftest_*.py             三支自測（零資料零 GPU）
