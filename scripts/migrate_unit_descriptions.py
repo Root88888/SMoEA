@@ -17,7 +17,6 @@ scripts/migrate_unit_descriptions.py
       --old assets/unit_descriptions.json \\
       --out assets/unit_descriptions_150task_skeleton.json
 校訂完成後將骨架檔改名/覆蓋為 assets/unit_descriptions.json 即生效
-（記得移除所有 TODO 與 status/_old_description 輔助欄位可留可刪，
 程式僅讀 descriptions[uid]["description"]）。
 """
 
