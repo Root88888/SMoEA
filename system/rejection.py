@@ -55,7 +55,7 @@ def handle_rejection(query, engine):
     engine.load_adapters_merged(weights)
     return engine.generate([query])[0]
 
-4. 繞過現成合成方法，直接動模型，不是線性加權合成就要這樣做
+4. 繞過現成合成方法，直接動模型
 def handle_rejection(query, engine):
     model = engine.model            # 標準 PeftModel，adapter 檔在 adapter/task{N}/
     ...                             # 合成術：讀權重檔、做任何數學、改 model
