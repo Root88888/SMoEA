@@ -1,5 +1,5 @@
 {
- "note": "50-task 重編號版；描述文字與 53 條版逐字相同",
+ "note": "150-task 版：unit 0-45 沿用 50-task 版描述；unit 46-145 依任務樣本撰寫",
  "units": {
   "0": [
    35,
@@ -142,6 +142,306 @@
   ],
   "45": [
    50
+  ],
+  "46": [
+   51
+  ],
+  "47": [
+   52
+  ],
+  "48": [
+   53
+  ],
+  "49": [
+   54
+  ],
+  "50": [
+   55
+  ],
+  "51": [
+   56
+  ],
+  "52": [
+   57
+  ],
+  "53": [
+   58
+  ],
+  "54": [
+   59
+  ],
+  "55": [
+   60
+  ],
+  "56": [
+   61
+  ],
+  "57": [
+   62
+  ],
+  "58": [
+   63
+  ],
+  "59": [
+   64
+  ],
+  "60": [
+   65
+  ],
+  "61": [
+   66
+  ],
+  "62": [
+   67
+  ],
+  "63": [
+   68
+  ],
+  "64": [
+   69
+  ],
+  "65": [
+   70
+  ],
+  "66": [
+   71
+  ],
+  "67": [
+   72
+  ],
+  "68": [
+   73
+  ],
+  "69": [
+   74
+  ],
+  "70": [
+   75
+  ],
+  "71": [
+   76
+  ],
+  "72": [
+   77
+  ],
+  "73": [
+   78
+  ],
+  "74": [
+   79
+  ],
+  "75": [
+   80
+  ],
+  "76": [
+   81
+  ],
+  "77": [
+   82
+  ],
+  "78": [
+   83
+  ],
+  "79": [
+   84
+  ],
+  "80": [
+   85
+  ],
+  "81": [
+   86
+  ],
+  "82": [
+   87
+  ],
+  "83": [
+   88
+  ],
+  "84": [
+   89
+  ],
+  "85": [
+   90
+  ],
+  "86": [
+   91
+  ],
+  "87": [
+   92
+  ],
+  "88": [
+   93
+  ],
+  "89": [
+   94
+  ],
+  "90": [
+   95
+  ],
+  "91": [
+   96
+  ],
+  "92": [
+   97
+  ],
+  "93": [
+   98
+  ],
+  "94": [
+   99
+  ],
+  "95": [
+   100
+  ],
+  "96": [
+   101
+  ],
+  "97": [
+   102
+  ],
+  "98": [
+   103
+  ],
+  "99": [
+   104
+  ],
+  "100": [
+   105
+  ],
+  "101": [
+   106
+  ],
+  "102": [
+   107
+  ],
+  "103": [
+   108
+  ],
+  "104": [
+   109
+  ],
+  "105": [
+   110
+  ],
+  "106": [
+   111
+  ],
+  "107": [
+   112
+  ],
+  "108": [
+   113
+  ],
+  "109": [
+   114
+  ],
+  "110": [
+   115
+  ],
+  "111": [
+   116
+  ],
+  "112": [
+   117
+  ],
+  "113": [
+   118
+  ],
+  "114": [
+   119
+  ],
+  "115": [
+   120
+  ],
+  "116": [
+   121
+  ],
+  "117": [
+   122
+  ],
+  "118": [
+   123
+  ],
+  "119": [
+   124
+  ],
+  "120": [
+   125
+  ],
+  "121": [
+   126
+  ],
+  "122": [
+   127
+  ],
+  "123": [
+   128
+  ],
+  "124": [
+   129
+  ],
+  "125": [
+   130
+  ],
+  "126": [
+   131
+  ],
+  "127": [
+   132
+  ],
+  "128": [
+   133
+  ],
+  "129": [
+   134
+  ],
+  "130": [
+   135
+  ],
+  "131": [
+   136
+  ],
+  "132": [
+   137
+  ],
+  "133": [
+   138
+  ],
+  "134": [
+   139
+  ],
+  "135": [
+   140
+  ],
+  "136": [
+   141
+  ],
+  "137": [
+   142
+  ],
+  "138": [
+   143
+  ],
+  "139": [
+   144
+  ],
+  "140": [
+   145
+  ],
+  "141": [
+   146
+  ],
+  "142": [
+   147
+  ],
+  "143": [
+   148
+  ],
+  "144": [
+   149
+  ],
+  "145": [
+   150
   ]
  },
  "descriptions": {
@@ -566,6 +866,906 @@
     "triviaqa_open_domain_factual_question_answering"
    ],
    "description": "Open-domain trivia question answering: answer a factual question using general world knowledge (no passage provided), outputting the answer."
+  },
+  "46": {
+   "tasks": [
+    "t51"
+   ],
+   "task_names": [
+    "ropes_background_to_new_situation_reasoning"
+   ],
+   "description": "Background-application question answering: apply the provided background knowledge to a new situation described in the passage, outputting a short answer."
+  },
+  "47": {
+   "tasks": [
+    "t52"
+   ],
+   "task_names": [
+    "hotpotqa_multi_hop_evidence_reasoning"
+   ],
+   "description": "Multi-hop evidence question answering: combine multiple pieces of evidence from the provided context to answer the question, outputting a short answer."
+  },
+  "48": {
+   "tasks": [
+    "t53"
+   ],
+   "task_names": [
+    "wikihop_entity_relation_multi_hop_reasoning"
+   ],
+   "description": "Entity-relation multi-hop question answering: reason across several provided documents about entities and their relations, outputting the entity answer."
+  },
+  "49": {
+   "tasks": [
+    "t54"
+   ],
+   "task_names": [
+    "quoref_coreference_grounded_extractive_reasoning"
+   ],
+   "description": "Coreference-grounded extractive question answering: answer the question from the passage while resolving which entity the relevant mentions refer to, outputting a short span."
+  },
+  "50": {
+   "tasks": [
+    "t55"
+   ],
+   "task_names": [
+    "duorc_paraphraserc_narrative_reading_reasoning"
+   ],
+   "description": "Narrative reading comprehension with paraphrased questions: answer a question about a movie-plot passage whose wording may differ from the passage, outputting a short answer or \"No answer\" when unanswerable."
+  },
+  "51": {
+   "tasks": [
+    "t56"
+   ],
+   "task_names": [
+    "dream_dialogue_reading_comprehension_reasoning"
+   ],
+   "description": "Dialogue reading comprehension: read a multi-turn conversation and answer a question using stated information and its implications, outputting a short answer."
+  },
+  "52": {
+   "tasks": [
+    "t57"
+   ],
+   "task_names": [
+    "adversarialqa_robust_extractive_reading_reasoning"
+   ],
+   "description": "Adversarial extractive question answering: answer a possibly adversarially-written question strictly from the provided passage, outputting a short span."
+  },
+  "53": {
+   "tasks": [
+    "t58"
+   ],
+   "task_names": [
+    "proofwriter_cwa_deductive_classification"
+   ],
+   "description": "Closed-world deductive classification: determine whether a query can be derived from the supplied facts and rules under the closed-world assumption, outputting True or False."
+  },
+  "54": {
+   "tasks": [
+    "t59"
+   ],
+   "task_names": [
+    "proofwriter_cwa_proof_generation"
+   ],
+   "description": "Symbolic proof generation: derive the query from the numbered facts and rules, outputting the symbolic proof expression (using identifiers such as triple1 and rule1)."
+  },
+  "55": {
+   "tasks": [
+    "t60"
+   ],
+   "task_names": [
+    "proofwriter_cwa_forward_chaining"
+   ],
+   "description": "One-step forward chaining: apply the rules to the current facts for exactly one forward-chaining step, outputting every newly derivable statement (or None)."
+  },
+  "56": {
+   "tasks": [
+    "t61"
+   ],
+   "task_names": [
+    "proofwriter_cwa_abductive_reasoning"
+   ],
+   "description": "Abductive missing-fact recovery: identify the single removed fact whose restoration makes the target query derivable from the theory, outputting that fact."
+  },
+  "57": {
+   "tasks": [
+    "t62"
+   ],
+   "task_names": [
+    "proofwriter_cwa_natural_language_deduction"
+   ],
+   "description": "Natural-language closed-world deduction: determine whether a query follows from naturally phrased facts and rules under the closed-world assumption, outputting True or False."
+  },
+  "58": {
+   "tasks": [
+    "t63"
+   ],
+   "task_names": [
+    "eqasc_perturbed_answer_extraction"
+   ],
+   "description": "Statement-grounded answer extraction: given a statement and a question, produce the answer contained in the statement, outputting the short answer."
+  },
+  "59": {
+   "tasks": [
+    "t64"
+   ],
+   "task_names": [
+    "qasc_topic_to_related_fact"
+   ],
+   "description": "Topic-word extraction: given a scientific fact, produce a topic word that overlaps with the fact, outputting the topic word."
+  },
+  "60": {
+   "tasks": [
+    "t65"
+   ],
+   "task_names": [
+    "qasc_related_fact_generation"
+   ],
+   "description": "Related-fact generation: given a scientific fact and a topic word, write another fact related to it sharing at least one word, outputting the new fact."
+  },
+  "61": {
+   "tasks": [
+    "t66"
+   ],
+   "task_names": [
+    "qasc_fact_combination"
+   ],
+   "description": "Fact combination: combine two related scientific facts into a single concluding fact that borrows parts of both, outputting the combined fact."
+  },
+  "62": {
+   "tasks": [
+    "t67"
+   ],
+   "task_names": [
+    "qasc_overlapping_concept_extraction"
+   ],
+   "description": "Overlapping-word extraction: identify the (possibly inflected) word or concept shared by the two given sentences, outputting the overlapping word."
+  },
+  "63": {
+   "tasks": [
+    "t68"
+   ],
+   "task_names": [
+    "qasc_incorrect_option_generation"
+   ],
+   "description": "Incorrect-option generation: given a science question with its associated fact and correct answer, write a plausible but incorrect answer option, outputting the distractor."
+  },
+  "64": {
+   "tasks": [
+    "t69"
+   ],
+   "task_names": [
+    "qasc_candidate_answer_verification"
+   ],
+   "description": "Candidate-answer verification: given a science question with supporting information and a candidate answer, judge whether the candidate is correct, outputting Yes or No."
+  },
+  "65": {
+   "tasks": [
+    "t70"
+   ],
+   "task_names": [
+    "quarel_incorrect_answer_generation"
+   ],
+   "description": "Qualitative-physics incorrect-answer generation: given a two-option qualitative-physics question, produce the requested incorrect option, outputting the option."
+  },
+  "66": {
+   "tasks": [
+    "t71"
+   ],
+   "task_names": [
+    "quartz_explanation_generation"
+   ],
+   "description": "Science explanation generation: given a passage-based science question and its answer, generate an explanation supporting the answer, outputting the explanation."
+  },
+  "67": {
+   "tasks": [
+    "t72"
+   ],
+   "task_names": [
+    "sciq_incorrect_answer_generation"
+   ],
+   "description": "Science incorrect-answer generation: given a science question, produce a plausible but incorrect alternative answer, outputting the distractor."
+  },
+  "68": {
+   "tasks": [
+    "t73"
+   ],
+   "task_names": [
+    "sciq_explanation_generation"
+   ],
+   "description": "Science answer-support generation: given a science question and its correct answer, generate a supporting fact or explanation, outputting the supporting sentence."
+  },
+  "69": {
+   "tasks": [
+    "t74"
+   ],
+   "task_names": [
+    "social_iqa_candidate_answer_validity"
+   ],
+   "description": "Social-answer validation: given a social situation, a question and a candidate answer, judge whether the candidate answer is valid, outputting Yes or No."
+  },
+  "70": {
+   "tasks": [
+    "t75"
+   ],
+   "task_names": [
+    "strategyqa_supporting_sentence_generation"
+   ],
+   "description": "StrategyQA supporting-sentence generation: given a term with its description, a yes/no question and the answer, write the sentence justifying the answer, outputting the supporting sentence."
+  },
+  "71": {
+   "tasks": [
+    "t76"
+   ],
+   "task_names": [
+    "wiqa_perturbation_identification"
+   ],
+   "description": "Process perturbation identification: given a described process and candidate choices, identify which choice is the supposed perturbation, outputting the choice."
+  },
+  "72": {
+   "tasks": [
+    "t77"
+   ],
+   "task_names": [
+    "wiqa_missing_first_step_reconstruction"
+   ],
+   "description": "Process first-step reconstruction: given a process description missing its first step, provide the missing first step, outputting the step."
+  },
+  "73": {
+   "tasks": [
+    "t78"
+   ],
+   "task_names": [
+    "wiqa_final_step_prediction"
+   ],
+   "description": "Process final-step prediction: given the preceding steps of a process, provide its final step, outputting the step."
+  },
+  "74": {
+   "tasks": [
+    "t79"
+   ],
+   "task_names": [
+    "task1507_boolean_temporal_reasoning"
+   ],
+   "description": "Date/time statement verification: judge whether a statement about dates or times is true or false, outputting True or False."
+  },
+  "75": {
+   "tasks": [
+    "t80"
+   ],
+   "task_names": [
+    "task390_torque_text_span_selection"
+   ],
+   "description": "Event-span selection: given a passage, a question and a list of single-word events from the passage, select the event word(s) answering the question, outputting the selected events."
+  },
+  "76": {
+   "tasks": [
+    "t81"
+   ],
+   "task_names": [
+    "task085_unnatural_addsub_arithmetic"
+   ],
+   "description": "Swapped-operator arithmetic: evaluate an arithmetic expression in which the '+' and '-' symbols have exchanged meanings, outputting the numeric result."
+  },
+  "77": {
+   "tasks": [
+    "t82"
+   ],
+   "task_names": [
+    "sentiment_classification"
+   ],
+   "description": "Sentiment classification of multilingual reviews: follow the supplied instruction to classify the sentiment of the given text (e.g., Bengali restaurant reviews), outputting the sentiment label."
+  },
+  "78": {
+   "tasks": [
+    "t83"
+   ],
+   "task_names": [
+    "hate_speech_classification"
+   ],
+   "description": "Hate-speech classification: follow the supplied instruction to classify the given hateful post (e.g., by targeted community), outputting the classification label."
+  },
+  "79": {
+   "tasks": [
+    "t84"
+   ],
+   "task_names": [
+    "task611_mutual_multi_turn_dialogue"
+   ],
+   "description": "Dialogue continuation selection: given a short two-person conversation and four continuation options, choose the most reasonable next utterance, outputting the selected option."
+  },
+  "80": {
+   "tasks": [
+    "t85"
+   ],
+   "task_names": [
+    "natural_language_inference_classification"
+   ],
+   "description": "Sentence-pair entailment judgment: indicate whether the first sentence clearly entails the second, outputting the entailment label."
+  },
+  "81": {
+   "tasks": [
+    "t86"
+   ],
+   "task_names": [
+    "task905_hate_speech_offensive_classification"
+   ],
+   "description": "Offensive-tweet labeling: per the supplied instruction, classify or verify the Offensive / Hate Speech / Neither label of the given tweet, outputting the requested label."
+  },
+  "82": {
+   "tasks": [
+    "t87"
+   ],
+   "task_names": [
+    "task069_abductivenli_classification"
+   ],
+   "description": "Abductive middle selection: given a story beginning, two candidate middle sentences and an ending, choose the middle that makes the story coherent, outputting the selection."
+  },
+  "83": {
+   "tasks": [
+    "t88"
+   ],
+   "task_names": [
+    "task383_matres_classification"
+   ],
+   "description": "Verb temporal-property judgment: given a context and a verb, judge the requested temporal or factual property of the verb (e.g., whether it can be anchored in time), outputting Yes or No."
+  },
+  "84": {
+   "tasks": [
+    "t89"
+   ],
+   "task_names": [
+    "task087_new_operator_addsub_arithmetic"
+   ],
+   "description": "Redefined-operator arithmetic: evaluate an arithmetic expression whose '+'/'-' operators are replaced by other symbols, outputting the numeric result."
+  },
+  "85": {
+   "tasks": [
+    "t90"
+   ],
+   "task_names": [
+    "task199_mnli_classification"
+   ],
+   "description": "MNLI sentence-pair classification: per the instruction, decide the inference relation of the given sentence pair, outputting the relation label."
+  },
+  "86": {
+   "tasks": [
+    "t91"
+   ],
+   "task_names": [
+    "task1510_evalution_relation_extraction"
+   ],
+   "description": "Lexical relation extraction: given a phrase describing the relationship between two words, extract the relation type, outputting the relation label."
+  },
+  "87": {
+   "tasks": [
+    "t92"
+   ],
+   "task_names": [
+    "task517_emo_classify_emotion_of_dialogue"
+   ],
+   "description": "Dialogue emotion inference: infer the underlying emotion of the given text dialogue (e.g., happy, sad, angry, other), outputting the emotion label."
+  },
+  "88": {
+   "tasks": [
+    "t93"
+   ],
+   "task_names": [
+    "task511_reddit_tifu_long_text_summarization"
+   ],
+   "description": "Long-post summarization: generate a short summary of the given Reddit post, outputting the summary."
+  },
+  "89": {
+   "tasks": [
+    "t94"
+   ],
+   "task_names": [
+    "task379_agnews_topic_classification"
+   ],
+   "description": "News topic classification: classify the news article into one of four topics (World, Sports, Business, Sci/Tech), outputting the topic label."
+  },
+  "90": {
+   "tasks": [
+    "t95"
+   ],
+   "task_names": [
+    "task110_logic2text_sentence_generation"
+   ],
+   "description": "Logic-command interpretation: given logical operations selecting rows of a table, generate the natural-language interpretation of the commands, outputting the sentence."
+  },
+  "91": {
+   "tasks": [
+    "t96"
+   ],
+   "task_names": [
+    "task366_synthetic_return_primes"
+   ],
+   "description": "Prime filtering: given a list of integers, remove every non-prime integer, outputting the list of primes."
+  },
+  "92": {
+   "tasks": [
+    "t97"
+   ],
+   "task_names": [
+    "task1387_anli_r3_entailment"
+   ],
+   "description": "ANLI entailment classification: determine whether the hypothesis entails, contradicts or is neutral to the premise, outputting the relation label."
+  },
+  "93": {
+   "tasks": [
+    "t98"
+   ],
+   "task_names": [
+    "task084_babi_t1_single_supporting_fact_identify_relevant_fact"
+   ],
+   "description": "Supporting-fact identification: given an enumerated passage and a question, identify the numbered fact necessary to answer it, outputting the fact number."
+  },
+  "94": {
+   "tasks": [
+    "t99"
+   ],
+   "task_names": [
+    "task574_air_dialogue_sentence_generation"
+   ],
+   "description": "Flight-service dialogue response generation: given a customer-agent flight-booking dialogue, generate the requested response, outputting the utterance."
+  },
+  "95": {
+   "tasks": [
+    "t100"
+   ],
+   "task_names": [
+    "task1290_xsum_summarization"
+   ],
+   "description": "One-sentence article summarization: summarize the given news article in a single sentence, outputting the summary."
+  },
+  "96": {
+   "tasks": [
+    "t101"
+   ],
+   "task_names": [
+    "task935_defeasible_nli_atomic_classification"
+   ],
+   "description": "Defeasible-inference update classification: given a premise, a hypothesis and an update, decide whether the update strengthens or weakens the hypothesis, outputting the label."
+  },
+  "97": {
+   "tasks": [
+    "t102"
+   ],
+   "task_names": [
+    "task018_mctaco_temporal_reasoning_presence"
+   ],
+   "description": "Temporal-reasoning detection: indicate whether the given question involves temporal reasoning, outputting Yes or No."
+  },
+  "98": {
+   "tasks": [
+    "t103"
+   ],
+   "task_names": [
+    "task371_synthetic_product_of_list"
+   ],
+   "description": "Inner-list multiplication: for every inner list of numbers, multiply all of its elements, outputting the list of products."
+  },
+  "99": {
+   "tasks": [
+    "t104"
+   ],
+   "task_names": [
+    "task400_paws_paraphrase_classification"
+   ],
+   "description": "Paraphrase classification: decide whether two high-lexical-overlap sentences have the same meaning, outputting the paraphrase label."
+  },
+  "100": {
+   "tasks": [
+    "t105"
+   ],
+   "task_names": [
+    "task290_tellmewhy_question_answerability"
+   ],
+   "description": "Story-question answerability judgment: judge whether the question is answerable from the given story, outputting Answerable or Not Answerable."
+  },
+  "101": {
+   "tasks": [
+    "t106"
+   ],
+   "task_names": [
+    "task577_curiosity_dialogs_classification"
+   ],
+   "description": "Geography-dialogue turn classification: per the supplied instruction, classify the given turn of a user-assistant dialogue about geographic entities, outputting the requested label."
+  },
+  "102": {
+   "tasks": [
+    "t107"
+   ],
+   "task_names": [
+    "question_type_classification"
+   ],
+   "description": "Question-type classification: detect which category best describes the given question, outputting the category label."
+  },
+  "103": {
+   "tasks": [
+    "t108"
+   ],
+   "task_names": [
+    "task1645_medical_question_pair_dataset_text_classification"
+   ],
+   "description": "Medical question-pair similarity classification: classify whether the two hand-generated medical questions ask the same thing, outputting the similarity label."
+  },
+  "104": {
+   "tasks": [
+    "t109"
+   ],
+   "task_names": [
+    "task065_timetravel_consistent_sentence_classification"
+   ],
+   "description": "Story-consistency sentence selection: given a five-sentence story missing its second sentence and two candidate options, choose the option that keeps the story consistent, outputting the choice."
+  },
+  "105": {
+   "tasks": [
+    "t110"
+   ],
+   "task_names": [
+    "task614_glucose_cause_event_detection"
+   ],
+   "description": "Story cause-event detection: for the chosen sentence of a short story, identify the requested causal event occurring beforehand, outputting the answer."
+  },
+  "106": {
+   "tasks": [
+    "t111"
+   ],
+   "task_names": [
+    "task372_synthetic_palindrome_numbers"
+   ],
+   "description": "First-last digit filtering: return the integers whose first digit equals their last digit (single-digit integers qualify), outputting the filtered list."
+  },
+  "107": {
+   "tasks": [
+    "t112"
+   ],
+   "task_names": [
+    "task1418_bless_semantic_relation_classification"
+   ],
+   "description": "Concept-relatum relation classification: given a word pair (concept, relatum), determine their semantic relation from the allowed label set, outputting the relation."
+  },
+  "108": {
+   "tasks": [
+    "t113"
+   ],
+   "task_names": [
+    "task382_hybridqa_answer_generation"
+   ],
+   "description": "Part-of-speech tag question answering: answer a question asking for the POS tag of a word within the question, outputting the POS tag."
+  },
+  "109": {
+   "tasks": [
+    "t114"
+   ],
+   "task_names": [
+    "task1384_deal_or_no_dialog_classification"
+   ],
+   "description": "Negotiation agreement detection: given a negotiation dialogue between two participants, answer Yes if both agree to the deal and No otherwise."
+  },
+  "110": {
+   "tasks": [
+    "t115"
+   ],
+   "task_names": [
+    "task1540_parsed_pdfs_summarization"
+   ],
+   "description": "Article headline generation: generate a title of under fifteen words for the given article excerpt, outputting the headline."
+  },
+  "111": {
+   "tasks": [
+    "t116"
+   ],
+   "task_names": [
+    "task274_overruling_legal_classification"
+   ],
+   "description": "Legal overruling classification: determine whether the sentence is overruling (nullifying a previous case decision) or non-overruling, outputting the label."
+  },
+  "112": {
+   "tasks": [
+    "t117"
+   ],
+   "task_names": [
+    "task1153_bard_analogical_reasoning_affordance"
+   ],
+   "description": "Affordance analogy completion: complete \"A : B. C : ?\" analogies signifying affordances (actions doable on objects), outputting the missing term."
+  },
+  "113": {
+   "tasks": [
+    "t118"
+   ],
+   "task_names": [
+    "question_answerability_classification"
+   ],
+   "description": "Question answerability classification: given a question and any supplied context (e.g., a Wikipedia paragraph), return the requested answerable/unanswerable judgment, outputting the label (and the answer when required)."
+  },
+  "114": {
+   "tasks": [
+    "t119"
+   ],
+   "task_names": [
+    "task605_find_the_longest_common_subsequence_in_two_lists"
+   ],
+   "description": "Longest-common-subsequence extraction: find the longest common subsequence of the two given lists, outputting the subsequence."
+  },
+  "115": {
+   "tasks": [
+    "t120"
+   ],
+   "task_names": [
+    "task1505_root09_semantic_relation_classification"
+   ],
+   "description": "Word-pair relation deduction: deduce the relation type of the given word pair among HYPER, COORD and RANDOM, outputting the label."
+  },
+  "116": {
+   "tasks": [
+    "t121"
+   ],
+   "task_names": [
+    "task239_tweetqa_answer_generation"
+   ],
+   "description": "Tweet-context question answering: generate the right answer to the question from the given tweet paragraph, outputting the answer."
+  },
+  "117": {
+   "tasks": [
+    "t122"
+   ],
+   "task_names": [
+    "task1532_daily_dialog_emotion_classification"
+   ],
+   "description": "Dialogue per-utterance emotion labeling: label the emotion of each continuous utterance in the two-person conversation, outputting the emotion labels."
+  },
+  "118": {
+   "tasks": [
+    "t123"
+   ],
+   "task_names": [
+    "task102_commongen_sentence_generation"
+   ],
+   "description": "Concept-set sentence generation: given a set of 3-5 everyday concepts, generate a coherent sentence using all of them, outputting the sentence."
+  },
+  "119": {
+   "tasks": [
+    "t124"
+   ],
+   "task_names": [
+    "task1447_drug_extraction_ade"
+   ],
+   "description": "Drug-name recognition: recognize the name of the drug or medicine mentioned in the sentence, outputting the drug name."
+  },
+  "120": {
+   "tasks": [
+    "t125"
+   ],
+   "task_names": [
+    "task392_inverse_causal_relationship"
+   ],
+   "description": "Result-cause plausibility judgment: for a sentence pair joined by \"because\", decide whether the first sentence can plausibly be the result of the second, outputting the judgment."
+  },
+  "121": {
+   "tasks": [
+    "t126"
+   ],
+   "task_names": [
+    "task1206_atomic_classification_isbefore"
+   ],
+   "description": "Event-order classification: given Head and Tail event phrases, judge the requested temporal relation between them (e.g., whether Head happens before Tail), outputting Yes or No."
+  },
+  "122": {
+   "tasks": [
+    "t127"
+   ],
+   "task_names": [
+    "task850_synthetic_longest_palindrome"
+   ],
+   "description": "Longest palindromic substring: find the longest substring of the given string that is a palindrome (first character if length one), outputting the substring."
+  },
+  "123": {
+   "tasks": [
+    "t128"
+   ],
+   "task_names": [
+    "task209_stancedetection_classification"
+   ],
+   "description": "Stance detection: detect the stance of the argument toward the given topic among \"in favor\", \"against\" and \"neutral\", outputting the stance label."
+  },
+  "124": {
+   "tasks": [
+    "t129"
+   ],
+   "task_names": [
+    "answer_verification_classification"
+   ],
+   "description": "Answer-verification classification: given a question, supporting information and a proposed answer, judge whether the answer is correct, outputting Yes or No."
+  },
+  "125": {
+   "tasks": [
+    "t130"
+   ],
+   "task_names": [
+    "task1729_personachat_generate_next"
+   ],
+   "description": "Persona-grounded next-utterance generation: given personality sentences and the dialogue history, generate the next utterance, outputting the response."
+  },
+  "126": {
+   "tasks": [
+    "t131"
+   ],
+   "task_names": [
+    "task569_recipe_nlg_text_generation"
+   ],
+   "description": "Recipe title generation: generate the title of a recipe from its ingredients and directions, outputting the title."
+  },
+  "127": {
+   "tasks": [
+    "t132"
+   ],
+   "task_names": [
+    "task1544_conll2002_named_entity_recognition_answer_generation"
+   ],
+   "description": "Dutch named-entity extraction: write the named entities present in the Dutch question (B-/I- phrase notation), outputting the entities."
+  },
+  "128": {
+   "tasks": [
+    "t133"
+   ],
+   "task_names": [
+    "task269_csrg_counterfactual_story_generation"
+   ],
+   "description": "Counterfactual story-ending generation: given a premise, initial context, original ending and a counterfactual context, generate a new ending aligned with the counterfactual while staying close to the original, outputting the new ending."
+  },
+  "129": {
+   "tasks": [
+    "t134"
+   ],
+   "task_names": [
+    "task970_sherliic_causal_relationship"
+   ],
+   "description": "Sentence entailment judgment: decide whether the second sentence is entailed by the first, outputting the entailment label."
+  },
+  "130": {
+   "tasks": [
+    "t135"
+   ],
+   "task_names": [
+    "task206_collatz_conjecture"
+   ],
+   "description": "Collatz-step transformation: for each integer in the list, halve it if even or apply 3n+1 if odd, outputting the transformed list."
+  },
+  "131": {
+   "tasks": [
+    "t136"
+   ],
+   "task_names": [
+    "task463_parsinlu_entailment_classification"
+   ],
+   "description": "Persian natural language inference: determine whether the Persian hypothesis entails, contradicts or is neutral to the premise, outputting the label."
+  },
+  "132": {
+   "tasks": [
+    "t137"
+   ],
+   "task_names": [
+    "task849_pubmedqa_answer_generation"
+   ],
+   "description": "Biomedical context question answering: answer the question from the given biomedical passage context, outputting the answer."
+  },
+  "133": {
+   "tasks": [
+    "t138"
+   ],
+   "task_names": [
+    "task293_storycommonsense_emotion_text_generation"
+   ],
+   "description": "Character-emotion text generation: given a story context, a sentence and a character, produce the requested emotion description for that character, outputting the text."
+  },
+  "134": {
+   "tasks": [
+    "t139"
+   ],
+   "task_names": [
+    "task1409_dart_text_generation"
+   ],
+   "description": "Triple-to-text generation: generate a proper sentence expressing the given [subject, predicate, object] triplets, outputting the sentence."
+  },
+  "135": {
+   "tasks": [
+    "t140"
+   ],
+   "task_names": [
+    "task1329_open_subtitles_en_hi_translation"
+   ],
+   "description": "English-to-Hindi translation: translate the given English text into Hindi, outputting the translation."
+  },
+  "136": {
+   "tasks": [
+    "t141"
+   ],
+   "task_names": [
+    "task622_replace_alphabets_in_a_list_by_their_position_in_english_alphabet"
+   ],
+   "description": "Alphabet-to-position conversion: convert every alphabet in the input list to its position number in the English alphabet, outputting the converted list."
+  },
+  "137": {
+   "tasks": [
+    "t142"
+   ],
+   "task_names": [
+    "task460_qasper_answer_generation"
+   ],
+   "description": "Academic-paper question answering: answer the question from the given paper context, outputting the answer."
+  },
+  "138": {
+   "tasks": [
+    "t143"
+   ],
+   "task_names": [
+    "task127_scan_long_text_generation_action_command_all"
+   ],
+   "description": "Action-sequence command generation: given a sequence of agent navigation actions, produce the matching command in the limited natural language, outputting the command."
+  },
+  "139": {
+   "tasks": [
+    "t144"
+   ],
+   "task_names": [
+    "task1443_string_to_number"
+   ],
+   "description": "Spelled-digit string conversion: convert a string of spelled-out single digits written without spaces into the corresponding number, outputting the number."
+  },
+  "140": {
+   "tasks": [
+    "t145"
+   ],
+   "task_names": [
+    "task1631_openpi_answer_generation"
+   ],
+   "description": "Attribute-change sentence generation: given an entity, its before/after events and an attribute, generate a sentence describing the attribute change, outputting the sentence."
+  },
+  "141": {
+   "tasks": [
+    "t146"
+   ],
+   "task_names": [
+    "task103_facts2story_long_text_generation"
+   ],
+   "description": "Fact-grounded story generation: generate a story of 100 to 1000 words that includes all five given ordered key facts, outputting the story."
+  },
+  "142": {
+   "tasks": [
+    "t147"
+   ],
+   "task_names": [
+    "task499_extract_and_add_all_numbers_from_list"
+   ],
+   "description": "Number extraction and summation: find all numeric elements in the input list and calculate their sum, outputting the total."
+  },
+  "143": {
+   "tasks": [
+    "t148"
+   ],
+   "task_names": [
+    "task1420_mathqa_general"
+   ],
+   "description": "General math multiple-choice solving: solve the math problem and classify the answer into options a-e, outputting the option letter."
+  },
+  "144": {
+   "tasks": [
+    "t149"
+   ],
+   "task_names": [
+    "extract_and_sort_unique_symbols_in_a_list"
+   ],
+   "description": "Unique-symbol extraction and sorting: extract the unique requested alphabets or numbers from a mixed list and return them in sorted order, outputting the sorted symbols."
+  },
+  "145": {
+   "tasks": [
+    "t150"
+   ],
+   "task_names": [
+    "text_validity_classification"
+   ],
+   "description": "Text-validity classification: follow the supplied instruction to judge the given text or proposed textual edit (e.g., identify the typo type), outputting the validity label."
   }
  }
 }
