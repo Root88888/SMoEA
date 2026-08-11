@@ -23,10 +23,9 @@ engine（system.inference.InferenceEngine，base model 已載妥）：
 adapter 權重檔請放在 adapter/{task_key}/（目錄內直接放 checkpoint，
 多個 checkpoint-*/ 自動取最新）。
 
-測試：python main.py --mode interactive 輸入域外 query 即觸發本函式；
+測試：python main.py --mode interactive 輸入應拒絕 OOD query 即觸發本函式；
 批次 python main.py --mode batch 後拒絕樣本的輸出在
-results/main_batch_outputs.jsonl。環境照 README，
-scripts/check_env.py 全 PASS 後開工。
+results/main_batch_outputs.jsonl。
 """
 
 
