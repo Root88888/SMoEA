@@ -40,7 +40,7 @@ thresholds:                       # 四區分流的三條線 + 裁決線
   theta_verify: 0.5               # 送審裁決：LLM 是非題 yes 機率達此值才路由
 
 verifier:
-  model_path: meta-llama/Llama-3.1-8B-Instruct   # 可填本地路徑
+  model_path: unsloth/Meta-Llama-3.1-8B-Instruct   # 可填本地路徑
   example_max_chars: 300
   checkpoint_every: 50            # 送審打分每 N 筆 flush 一次（可中斷續跑）
 
