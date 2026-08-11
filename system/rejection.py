@@ -7,7 +7,7 @@ handle_rejection(query, engine)，並把回傳的字串當作最終輸出
 （互動模式直接印出；批次模式寫入 results/main_batch_outputs.jsonl）。
 實作本函式即完成接入，不需改動其他任何檔案。
 
-輸入  query: str   查詢原文（即生成用 prompt）
+輸入  query: str   查詢原文
 輸出  str          模型輸出文本
 
 engine（system.inference.InferenceEngine，base model 已載妥）：
