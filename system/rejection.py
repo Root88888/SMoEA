@@ -49,13 +49,23 @@ def handle_rejection(query, engine):
     engine.load_adapters_merged({"task23": 0.5, "task10": 0.5})
     return engine.generate([query])[0]
 
-3. 其他演算法決定比例
+3. 其他演算法決定線性比例
 def handle_rejection(query, engine):
     weights = my_merging_algorithm(query) # 例如 weights = {"task23": 0.6, "task10": 0.4}
     engine.load_adapters_merged(weights)
     return engine.generate([query])[0]
 
-4. 繞過現成合成方法，直接動模型
+4. 在這裡寫自己的函式
+def handle_rejection(query, engine):
+    my_method(query, engine)         # 呼叫自己的函式
+    return engine.generate([query])[0]
+
+5. 先在 system.inference.InferenceEngine 實作新方法
+def handle_rejection(query, engine):
+    engine.new_method()
+    return engine.generate([query])[0]
+
+6. 直接動模型
 def handle_rejection(query, engine):
     model = engine.model            # 標準 PeftModel，adapter 檔在 adapter/task{N}/
     ...                             # 合成術：讀權重檔、做任何數學、改 model
