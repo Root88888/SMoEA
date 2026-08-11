@@ -27,3 +27,5 @@ adapter/
 *.pt
 adapter/
 inference_results/
+
+.conda/
