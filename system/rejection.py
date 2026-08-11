@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-system/rejection.py — 拒絕分支（Adapter Merging）的接入點
+system/rejection.py — 拒絕分支（Model Merging）的接入點
 
 主程式啟動時把 base model 載進 GPU、包成一個物件叫 engine；每次有 query 被拒絕，
 主程式就呼叫 handle_rejection(query, engine)，並把回傳的字串當作最終輸出
