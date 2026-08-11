@@ -20,7 +20,7 @@ engine（system.inference.InferenceEngine，base model 已載妥）：
   engine.generate([prompt, ...]) -> [output, ...]
       生成（解碼設定與 ID 路徑一致，見 system/inference.py）。
 
-adapter 權重檔在 adapter/{task_key}/（目錄內直接放 adapter，
+adapter 權重檔請放在 adapter/{task_key}/（目錄內直接放 checkpoint，
 多個 checkpoint-*/ 自動取最新）。
 
 測試：python main.py --mode interactive 輸入域外 query 即觸發本函式；
