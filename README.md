@@ -47,6 +47,7 @@ docs/                       架構圖與文件
      `dataset/test_data/`（檔名 `task{N}_train.json` / `task{N}_test.json`）
    - adapters：每任務一個目錄，放成 `adapter/task{N}/`；解壓後若外層
      多包一層目錄，將其中的 `task*` 移出攤平
+
 重要說明: 我在這個系統把原本的 OOD task149 稱為 task9149，以便跟 ID task149 區分，麻煩檔案就位後手動把 OOD task149 檔名改為 task9149_test.json
 
 3. 一鍵建置
