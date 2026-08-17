@@ -63,7 +63,7 @@ docs/                       架構圖與文件
    （首次 GPU 數分鐘）。結尾印出「全部就緒」即完成；中途停止時
    依提示處理後重跑即可（已完成步驟自動跳過）。
    
-4. 執行確認
+4. 單筆執行互動
 ```bash
    conda activate smoea
    python main.py --mode interactive
