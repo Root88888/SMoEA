@@ -64,31 +64,37 @@ def main():
     torch.cuda.reset_peak_memory_stats()
     engine.load_base()
 
-    # Check one real module against the explicit base(x) + delta(x) equation.
-    spec = artifact.modules[0]
-    module = dict(engine.model.named_modules())[spec.name]
-    delta = load_file(str(artifact.weight_files[0]), device="cpu")[spec.tensor_name]
-    inputs = torch.randn(
-        1,
-        2,
-        module.in_features,
-        device=module.weight.device,
-        dtype=module.weight.dtype,
-    )
-    engine._dense_controller.disable()
-    with torch.no_grad():
-        base_output = module(inputs)
-        expected = base_output + functional.linear(
-            inputs,
-            delta.to(device=module.weight.device, dtype=module.weight.dtype),
-        ).to(base_output.dtype)
-        engine._dense_controller.enable()
-        actual = module(inputs)
-        layer_max_abs_error = float((actual.float() - expected.float()).abs().max())
-    if layer_max_abs_error != 0.0:
-        raise AssertionError(
-            f"dense layer equation mismatch: max_abs_error={layer_max_abs_error}"
+    layer_max_abs_error = None
+    if artifact.format == "dense_delta_v1":
+        # Check one real module against the explicit base(x) + delta(x) equation.
+        spec = artifact.modules[0]
+        module = dict(engine.model.named_modules())[spec.name]
+        delta = load_file(
+            str(artifact.weight_files[0]), device="cpu"
+        )[spec.tensor_name]
+        inputs = torch.randn(
+            1,
+            2,
+            module.in_features,
+            device=module.weight.device,
+            dtype=module.weight.dtype,
         )
+        engine._dense_controller.disable()
+        with torch.no_grad():
+            base_output = module(inputs)
+            expected = base_output + functional.linear(
+                inputs,
+                delta.to(device=module.weight.device, dtype=module.weight.dtype),
+            ).to(base_output.dtype)
+            engine._dense_controller.enable()
+            actual = module(inputs)
+            layer_max_abs_error = float(
+                (actual.float() - expected.float()).abs().max()
+            )
+        if layer_max_abs_error != 0.0:
+            raise AssertionError(
+                f"dense layer equation mismatch: max_abs_error={layer_max_abs_error}"
+            )
 
     engine.ensure_adapter(args.task_a)
     task_a_first = last_token_logits(engine, prompt)
