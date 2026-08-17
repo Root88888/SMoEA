@@ -74,9 +74,19 @@ class MergedModelArtifactTests(unittest.TestCase):
                 base_model_config_sha256=(
                     "e01aa4af77230cb8dcc6b014b17227a17ccb64d62642e9997f169f785c2d72bb"
                 ),
+                torch_dtype="bfloat16",
+                quantization="none",
             )
 
             validate_base_model_config(artifact)
+            validate_inference_config(
+                artifact,
+                {"dtype": "bfloat16", "load_in_4bit": False},
+            )
+
+            artifact.base_model_config_sha256 = "0" * 64
+            with self.assertRaisesRegex(MergedModelError, "does not match"):
+                validate_base_model_config(artifact)
 
     def test_loads_a_valid_dense_delta_artifact(self):
         with tempfile.TemporaryDirectory() as directory:

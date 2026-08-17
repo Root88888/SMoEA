@@ -148,6 +148,19 @@ def validate_base_model_config(artifact: MergedModelArtifact) -> None:
         raise MergedModelError(
             f"cannot resolve config for base model {artifact.base_model_name!r}"
         )
+    try:
+        config = json.loads(Path(resolved).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise MergedModelError(f"cannot read base model config {resolved}: {exc}") from exc
+    canonical = json.dumps(
+        config, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+    ).encode("utf-8")
+    digest = hashlib.sha256(canonical).hexdigest()
+    if digest != artifact.base_model_config_sha256:
+        raise MergedModelError(
+            "configured base model config does not match merged model artifact: "
+            f"expected {artifact.base_model_config_sha256}, found {digest}"
+        )
 
 
 def validate_inference_config(
@@ -168,19 +181,6 @@ def validate_inference_config(
         raise MergedModelError(
             "merged model requires torch dtype "
             f"{artifact.torch_dtype!r}; configured {configured_dtype!r}"
-        )
-    try:
-        config = json.loads(Path(resolved).read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
-        raise MergedModelError(f"cannot read base model config {resolved}: {exc}") from exc
-    canonical = json.dumps(
-        config, sort_keys=True, separators=(",", ":"), ensure_ascii=False
-    ).encode("utf-8")
-    digest = hashlib.sha256(canonical).hexdigest()
-    if digest != artifact.base_model_config_sha256:
-        raise MergedModelError(
-            "configured base model config does not match merged model artifact: "
-            f"expected {artifact.base_model_config_sha256}, found {digest}"
         )
 
 
