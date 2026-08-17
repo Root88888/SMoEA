@@ -11,8 +11,8 @@
 # ─────────────────────────────────────────────────────────────────────────────
 # 【需自行準備】（腳本會逐項檢查，缺哪項會明講）
 #   1. conda（miniconda 即可）與 NVIDIA 驅動已安裝
-#   2. 任務樣本 → dataset/train_data/、dataset/test_data/
-#        task{N}_train.json / task{N}_test.json
+#   2. Router 訓練樣本 → dataset/train_data/task{N}_train.json
+#      benchmark 才需要 dataset/test_data/，線上服務建置不要求。
 #   3. adapters → adapter/task{N}/（自 Google Drive 下載解壓後攤平放入；
 #        每個任務一個目錄，內含 adapter 檔或 checkpoint-*/）
 #   （單位說明書 assets/unit_descriptions.json 隨 repo 自帶，無需準備）
@@ -28,23 +28,15 @@ echo "== SMoEA workspace setup @ $(pwd) =="
 
 fail() { echo "✗ $1"; echo "  → $2"; exit 1; }
 
-# 公司資料保留 benchmark-native OOD task149；內部 alias 由 setup 建立，
-# 不覆寫同名的 source Adapter Slot task149 測試檔。
-python scripts/map_ood_aliases.py --dataset-dir dataset \
-  || fail "OOD task149 alias 建立失敗" \
-          "把原始 OOD 檔放到 dataset/ood_test_data/task149_test.json 後重跑"
-
 # ---- 0/4 檢查「需自行準備」清單 ----
 [ "$(ls dataset/train_data/task*.json* 2>/dev/null | wc -l)" -ge 1 ] \
   || fail "dataset/train_data/ 沒有任務樣本"
-[ "$(ls dataset/test_data/task*.json* 2>/dev/null | wc -l)" -ge 1 ] \
-  || fail "dataset/test_data/ 沒有測試樣本"
 [ -f assets/unit_descriptions.json ] \
   || fail "缺 assets/unit_descriptions.json（repo 自帶）"
 [ "$(ls -d adapter/task* 2>/dev/null | wc -l)" -ge 1 ] \
   || fail "adapter/ 沒有任務目錄" "自 Google Drive"
 echo "[0/4] 需自行準備的檔案齊全"
-echo "      樣本 train $(ls dataset/train_data | wc -l) / test $(ls dataset/test_data | wc -l) 檔、adapter $(ls -d adapter/task* | wc -l) 個任務"
+echo "      Router 訓練樣本 $(ls dataset/train_data | wc -l) 檔、adapter $(ls -d adapter/task* | wc -l) 個任務"
 
 # ---- 1/4 conda env ----
 # 已 activate 某個環境（非 base）→ 直接使用、不另建；
@@ -94,7 +86,7 @@ python scripts/check_env.py || fail "體檢未過" "照上方 FAIL 提示處置�
 mkdir -p results
 if [ ! -f assets/router_assets.npz ]; then
     echo "[3/4] 建置路由資產（首次含嵌入計算；GPU 數分鐘）…"
-    python scripts/build_router_assets.py
+    python scripts/build_router_assets.py --serving-only
 else
     echo "[3/4] 路由資產已存在，跳過（要重建：先刪 assets/router_assets.npz）"
 fi

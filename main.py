@@ -133,7 +133,7 @@ def print_diagnosis(d):
 def run_interactive(cfg, rt, preload=True):
     engine = InferenceEngine(cfg)
     vmode = cfg["system"]["verifier_mode"]
-    scorer = make_verifier(cfg, vmode)
+    scorer = make_verifier(cfg, vmode) if preload else None
     descs = rt.load_descriptions() if vmode != "off" else None
     if descs is not None:
         miss = [u for u in range(len(rt.units)) if str(u) not in descs]
@@ -164,6 +164,8 @@ def run_interactive(cfg, rt, preload=True):
         z = int(dec["zone"][0])
         if z == conformal.ZONE_ESCALATE:
             if vmode == "resident_4bit":
+                if scorer is None:
+                    scorer = make_verifier(cfg, vmode)
                 rt.escalate(dec, [q], scorer, descs)
             elif vmode == "swap":
                 swap_verify(cfg, rt, engine, [q], dec)
@@ -302,7 +304,7 @@ def main():
         p.add_argument("--limit", type=int, default=None,
                        help="批次模式每任務最多筆數（試跑用）"),
         p.add_argument("--no_preload", action="store_true",
-                       help="互動模式不預載模型（只看路由判定的輕量用法）")))
+                       help="互動模式延後到第一筆需要時才載入模型")))
     rt = Router.load(cfg)
     print(f"[Router] 資產已載：{len(rt.id_tasks)} 任務、"
           f"{len(rt.units)} 路由單位")

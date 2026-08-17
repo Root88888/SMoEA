@@ -27,10 +27,10 @@ scripts/
   eval_baseline_*.py        兩支 baseline
   verify_flow_table.py      評測結果獨立重放驗證
   plot_centroids.py         質心結構圖
-dataset/                    資料（不進 git）；請建立 dataset 目錄以及 dataset/train_data/ 和 dataset/test_data/
-  train_data/task{N}_train.json
-  test_data/task{N}_test.json
-  ood_test_data/task149_test.json  benchmark-native OOD task149（setup 自動映射為內部 9149）
+dataset/                    資料（不進 git）
+  train_data/task{N}_train.json    線上 router 建置需要
+  test_data/task{N}_test.json      批次評測才需要
+  ood_test_data/task149_test.json  批次評測用的原始 OOD task149
 adapter/task{N}/            LoRA adapters（不進 git）：請建立 adapter 目錄，將 task{N} 直接放在 adapter/ 下，task 內如有多個 checkpoint-*/ 自動取最新
 <external>/merged_model/    MoEA-Trainer delivery 產生的 selected merging artifact（不進 git）
 assets/                     路由建置產物；unit_descriptions.json 為人工校訂的單位說明書
@@ -46,8 +46,10 @@ docs/                       架構圖與文件
 ```
  
 2. 放置檔案（手動步驟）
-   - 任務樣本：train 檔放 `dataset/train_data/`、test 檔放
-     `dataset/test_data/`（檔名 `task{N}_train.json` / `task{N}_test.json`）
+   - Router 訓練樣本：放到 `dataset/train_data/`，檔名
+     `task{N}_train.json`。互動與線上服務建置只需要這一份資料
+   - 批次評測資料：要跑 benchmark 時才放到 `dataset/test_data/`，檔名
+     `task{N}_test.json`
    - adapters：每任務一個目錄，放成 `adapter/task{N}/`；解壓後若外層
      多包一層目錄，將其中的 `task*` 移出攤平
    - OOD Natural Instructions `task149`：保留原始檔名，放到
@@ -56,9 +58,10 @@ docs/                       架構圖與文件
    - selected merge：將 MoEA-Trainer delivery 的完整
      `prepare/merged_model/` 放在共享儲存；不要只複製 weight file
 
-`setup_workspace.sh` 會為 OOD `task149` 建立內部 `task9149` symlink，不需手動改名。
-Batch output 的 `source_task` 仍是原始 `task149`，並另以
-`internal_task_id: task9149` 保留除錯資訊。
+要跑完整 benchmark 時，先執行
+`python scripts/map_ood_aliases.py --dataset-dir dataset`，為 OOD `task149`
+建立內部 `task9149` symlink，不需手動改名。Batch output 的 `source_task`
+仍是原始 `task149`，並另以 `internal_task_id: task9149` 保留除錯資訊。
 
 3. 一鍵建置
    
@@ -68,7 +71,8 @@ Batch output 的 `source_task` 仍是原始 `task149`，並另以
    bash scripts/setup_workspace.sh
 ```
 
-   自動完成：檔案檢查（缺漏會明確提示）、conda 環境建置與依賴安裝
+   setup 預設建立互動／線上服務需要的 router 資產，不要求 benchmark
+   test data。它會自動完成：檔案檢查（缺漏會明確提示）、conda 環境建置與依賴安裝
    （首次 10-20 分鐘）、環境體檢、查詢嵌入計算與路由資產建置
    （首次 GPU 數分鐘）。結尾印出「全部就緒」即完成；中途停止時
    依提示處理後重跑即可（已完成步驟自動跳過）。
@@ -94,7 +98,11 @@ Batch output 的 `source_task` 仍是原始 `task149`，並另以
 設為 required 後，路徑未設定、schema 不符、base model 不同、檔案大小或 checksum
 錯誤都會在接受輸入前停止，不會改用 base model。
  
-5. 批次執行
+5. 批次評測
+
+   批次模式另外需要完整 `dataset/test_data/`。若資料尚未備齊，互動模式
+   仍可正常使用，但不要把部分 test data 的結果當成完整 benchmark。
+
 ```bash
    python main.py --mode batch          # --tasks a,b 限任務、--limit n 每個任務test set只取前n筆
 ```
@@ -134,7 +142,9 @@ python main.py --mode batch
   `system/inference.py`。SMoEA 不會在 query 時重新 merge，也不會自動選最新 run。
 - **生成行為**（prompt、解碼參數、adapter 解析）：`system/inference.py`。
 - **新增任務**：樣本放 `dataset/`、adapter 放 `adapter/task{N}/`、
-  重跑 `build_router_assets.py` 即完成擴充（送審裁決另需在
+  線上服務重跑 `python scripts/build_router_assets.py --serving-only`；
+  要連同 benchmark test cache 一起建才改跑不帶此旗標的完整指令。
+  送審裁決另需在
   `assets/unit_descriptions.json` 補該任務所屬單位的說明）。
 
 ## 資料格式

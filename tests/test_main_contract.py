@@ -1,6 +1,7 @@
 import unittest
+from unittest.mock import Mock, patch
 
-from main import external_task_key, generation_prompt
+from main import external_task_key, generation_prompt, run_interactive
 
 
 class MainContractTests(unittest.TestCase):
@@ -31,6 +32,26 @@ class MainContractTests(unittest.TestCase):
     def test_internal_9149_is_reported_as_original_ood_task149(self):
         self.assertEqual(external_task_key(9149), "task149")
         self.assertEqual(external_task_key(149), "task149")
+
+    @patch("main.InferenceEngine")
+    @patch("main.make_verifier")
+    @patch("builtins.input", return_value="exit")
+    def test_no_preload_does_not_load_the_verifier_before_a_query_needs_it(
+        self, _input, make_verifier, _engine
+    ):
+        cfg = {
+            "system": {"verifier_mode": "resident_4bit"},
+            "verifier": {"model_path": "unused"},
+        }
+        router = Mock()
+        router.units = [[0]]
+        router.load_descriptions.return_value = {
+            "0": {"description": "example"}
+        }
+
+        run_interactive(cfg, router, preload=False)
+
+        make_verifier.assert_not_called()
 
 
 if __name__ == "__main__":

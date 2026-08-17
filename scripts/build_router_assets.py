@@ -19,6 +19,7 @@ scripts/build_router_assets.py
 【執行】repo 根目錄；首次執行需 GPU 與網路（下載嵌入模型），
 嵌入快取齊備後純 CPU 數分鐘：
   python scripts/build_router_assets.py 2>&1 | tee results/build_log.txt
+  # 只建線上服務資產、不要求 benchmark test_data：--serving-only
   # 只補嵌入不重建其餘：--embed_only
   # 覆蓋單項設定：--set units.sim_threshold=0.97
 
@@ -32,23 +33,45 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from router.config import config_from_cli, discover_tasks  # noqa: E402
+from router.config import (  # noqa: E402
+    config_from_cli,
+    discover_serving_tasks,
+    discover_tasks,
+)
 from router.core import Router, DESCRIPTIONS  # noqa: E402
 from router.embedding import ensure_task_embeddings  # noqa: E402
 from router.units import units_summary  # noqa: E402
 
 
+def add_build_args(parser):
+    parser.add_argument("--embed_only", action="store_true")
+    parser.add_argument(
+        "--serving-only",
+        action="store_true",
+        help=("只建立線上 router 所需的訓練嵌入與資產；"
+              "不要求 benchmark test_data"),
+    )
+
+
 def main():
-    cfg, args = config_from_cli(
-        lambda p: p.add_argument("--embed_only", action="store_true"))
-    id_tasks, ood_tasks = discover_tasks(cfg)
-    print(f"任務集合：ID {len(id_tasks)} 個、OOD {len(ood_tasks)} 個"
-          f"（由 {cfg['paths']['dataset_dir']} 掃描推導）")
+    cfg, args = config_from_cli(add_build_args)
+    if args.serving_only:
+        id_tasks = discover_serving_tasks(cfg)
+        ood_tasks = []
+        print(f"線上任務集合：ID {len(id_tasks)} 個"
+              f"（由 {cfg['paths']['dataset_dir']}/train_data 掃描；"
+              "不讀 benchmark test_data）")
+    else:
+        id_tasks, ood_tasks = discover_tasks(cfg)
+        print(f"任務集合：ID {len(id_tasks)} 個、OOD {len(ood_tasks)} 個"
+              f"（由 {cfg['paths']['dataset_dir']} 掃描推導）")
 
     # ---- 嵌入快取 ----
     n1 = ensure_task_embeddings(cfg, id_tasks, test=False)
-    n2 = ensure_task_embeddings(cfg, id_tasks, test=True)
-    n3 = ensure_task_embeddings(cfg, ood_tasks, test=True)
+    n2 = [] if args.serving_only else ensure_task_embeddings(
+        cfg, id_tasks, test=True)
+    n3 = [] if args.serving_only else ensure_task_embeddings(
+        cfg, ood_tasks, test=True)
     print(f"[embed] 補算 train {len(n1)} / ID test {len(n2)} / "
           f"OOD test {len(n3)} 個任務（其餘用既有快取）")
     if args.embed_only:
