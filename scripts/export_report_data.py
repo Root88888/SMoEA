@@ -60,21 +60,27 @@ def replay_main(cfg, rt, id_tasks, ood_tasks, rd):
                          for t in id_tasks])
     zone, pred = pred_of("test", te)
     y = z["test__y"]
+    unit_of = np.zeros(len(id_tasks), dtype=int)
+    for u, g in enumerate(rt.units):
+        unit_of[np.array(g)] = u
+    up = np.where(pred >= 0, unit_of[np.clip(pred, 0, None)], -9)
     id_rows = {}
     for i, t in enumerate(id_tasks):
         m = y == i
-        zt, pt = zone[m], pred[m]
+        zt, pt, upt = zone[m], pred[m], up[m]
+        uy = unit_of[i]
+        # ok/bad 以 unit 級判定（表格藍格加總 = unit 級 acc 的設計不變量）
         row = {"n": int(m.sum())}
         for zk, zname in ((conformal.ZONE_FLOOR, "direct"),
                           (conformal.ZONE_GREEN, "green")):
             mm = zt == zk
-            row[zname] = {"ok": int((pt[mm] == i).sum()),
+            row[zname] = {"ok": int((upt[mm] == uy).sum()),
                           "bad": int((pt[mm] >= 0).sum()
-                                     - (pt[mm] == i).sum())}
+                                     - (upt[mm] == uy).sum())}
         row["red"] = {"rej": int((zt == conformal.ZONE_RED).sum())}
         me = zt == conformal.ZONE_ESCALATE
-        row["esc"] = {"ok": int((pt[me] == i).sum()),
-                      "bad": int(((pt[me] >= 0) & (pt[me] != i)).sum()),
+        row["esc"] = {"ok": int((upt[me] == uy).sum()),
+                      "bad": int(((pt[me] >= 0) & (upt[me] != uy)).sum()),
                       "rej": int((pt[me] < 0).sum())}
         id_rows[str(id_tasks[i])] = row
 
@@ -139,7 +145,8 @@ def main():
             continue
         out["ablation"][ab] = {
             "micro": rep["micro"],
-            "per_task_id": {t: r["acc_task"]
+            "per_task_id": {t: {"acc_task": r["acc_task"],
+                                "acc_unit": r["acc_unit"]}
                             for t, r in rep["per_task_id"].items()},
             "per_task_ood": {t: r["reject_rate"]
                              for t, r in rep["per_task_ood"].items()}}
@@ -155,7 +162,8 @@ def main():
         out["baselines"][name] = {
             "source_file": os.path.basename(p),
             "micro": rep["micro"],
-            "per_task_id": {t: r["acc_task"]
+            "per_task_id": {t: {"acc_task": r["acc_task"],
+                                "acc_unit": r["acc_unit"]}
                             for t, r in rep["per_task_id"].items()},
             "per_task_ood": {t: r["reject_rate"]
                              for t, r in rep["per_task_ood"].items()}}
