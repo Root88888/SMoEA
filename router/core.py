@@ -205,6 +205,8 @@ class Router:
                                       len(self.units))
         lex_top1 = self.lex.top1_unit(texts)
         disagree = lex_top1 != m["b1"]
+        if not self.cfg["thresholds"].get("use_lexical", True):
+            disagree = np.zeros_like(disagree, dtype=bool)   # ablation：關閉詞彙訊號
         z = conformal.zones(m["margin"], pval, disagree,
                             self.cfg["thresholds"])
         return {"zone": z, "b1": m["b1"], "margin": m["margin"],
@@ -230,19 +232,24 @@ class Router:
             esc[r] = {"units": us, "p_yes": ps}
         return dec
 
-    def finalize(self, dec, count_missing=False):
+    def finalize(self, dec, count_missing=False, gray="verdict"):
         """分區＋裁決 → task 預測陣列（task 索引；-2=拒絕）。
 
         送審樣本無分數時視為拒絕（fail-closed）；count_missing=True 時
         另回傳缺分筆數供評測腳本斷言。
+        gray（灰區/送審樣本的處置，ablation 用）：
+          "verdict" 依 LLM 裁決（預設）| "reject" 全拒 | "route" 全依 top-1 放行。
         """
         theta = self.cfg["thresholds"]["theta_verify"]
         z = dec["zone"]
         pu = dec["b1"].copy()
         pu[z == conformal.ZONE_RED] = -2
+        if gray == "reject":
+            pu[z == conformal.ZONE_ESCALATE] = -2
         n_missing = 0
         esc = dec.get("esc", {})
-        for r in np.where(z == conformal.ZONE_ESCALATE)[0]:
+        for r in (() if gray != "verdict"
+                  else np.where(z == conformal.ZONE_ESCALATE)[0]):
             r = int(r)
             s = esc.get(r)
             if s is None:
