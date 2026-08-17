@@ -54,6 +54,8 @@ evaluation:
 system:                           # 主程式（main.py）：路由後的生成執行層
   base_model: unsloth/Meta-Llama-3.1-8B
   adapter_dir: adapter            # adapter/task{N}/（直含 adapter 檔或 checkpoint-*/ 取最新）
+  merged_model_dir: null          # 明確指定 delivery 的 prepare/merged_model；null 僅供開發
+  merged_model_required: false    # production 設 true；未指定 artifact 時啟動即失敗
   load_in_4bit: false             # 生成模型量化；須與 MoEA-Trainer 訓練側載入設定一致
   dtype: float16
   max_input_tokens: 4096          # prompt 截斷長度（左 padding）

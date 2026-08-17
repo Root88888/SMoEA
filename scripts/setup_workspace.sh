@@ -28,6 +28,12 @@ echo "== SMoEA workspace setup @ $(pwd) =="
 
 fail() { echo "✗ $1"; echo "  → $2"; exit 1; }
 
+# 公司資料保留 benchmark-native OOD task149；內部 alias 由 setup 建立，
+# 不覆寫同名的 source Adapter Slot task149 測試檔。
+python scripts/map_ood_aliases.py --dataset-dir dataset \
+  || fail "OOD task149 alias 建立失敗" \
+          "把原始 OOD 檔放到 dataset/ood_test_data/task149_test.json 後重跑"
+
 # ---- 0/4 檢查「需自行準備」清單 ----
 [ "$(ls dataset/train_data/task*.json* 2>/dev/null | wc -l)" -ge 1 ] \
   || fail "dataset/train_data/ 沒有任務樣本"

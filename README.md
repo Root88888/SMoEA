@@ -17,7 +17,8 @@ router/                     路由決策層
   metrics.py                評測計分
 system/                     路由之後的執行層
   inference.py              InferenceEngine：base model 常駐、per-task adapter 熱切換、生成
-  rejection.py              拒絕分支（Model Merging）介面
+  merged_model.py           delivery artifact 驗證、exact dense delta 非破壞切換
+  rejection.py              拒絕分支：使用啟動時明確選定的 merged model
 scripts/
   check_env.py              環境體檢
   selftest_*.py             三支自測（零資料零 GPU）
@@ -29,7 +30,9 @@ scripts/
 dataset/                    資料（不進 git）；請建立 dataset 目錄以及 dataset/train_data/ 和 dataset/test_data/
   train_data/task{N}_train.json
   test_data/task{N}_test.json
+  ood_test_data/task149_test.json  benchmark-native OOD task149（setup 自動映射為內部 9149）
 adapter/task{N}/            LoRA adapters（不進 git）：請建立 adapter 目錄，將 task{N} 直接放在 adapter/ 下，task 內如有多個 checkpoint-*/ 自動取最新
+<external>/merged_model/    MoEA-Trainer delivery 產生的 selected merging artifact（不進 git）
 assets/                     路由建置產物；unit_descriptions.json 為人工校訂的單位說明書
 results/                    評測與批次輸出
 docs/                       架構圖與文件
@@ -47,8 +50,15 @@ docs/                       架構圖與文件
      `dataset/test_data/`（檔名 `task{N}_train.json` / `task{N}_test.json`）
    - adapters：每任務一個目錄，放成 `adapter/task{N}/`；解壓後若外層
      多包一層目錄，將其中的 `task*` 移出攤平
+   - OOD Natural Instructions `task149`：保留原始檔名，放到
+     `dataset/ood_test_data/task149_test.json`；source Adapter Slot `task149`
+     的測試檔仍可留在 `dataset/test_data/task149_test.json`
+   - selected merge：將 MoEA-Trainer delivery 的完整
+     `prepare/merged_model/` 放在共享儲存；不要只複製 weight file
 
-重要說明: 我在這個系統把原本的 OOD task149 稱為 task9149，以便跟 ID task149 區分，麻煩檔案就位後手動把 OOD task149 檔名改為 task9149_test.json
+`setup_workspace.sh` 會為 OOD `task149` 建立內部 `task9149` symlink，不需手動改名。
+Batch output 的 `source_task` 仍是原始 `task149`，並另以
+`internal_task_id: task9149` 保留除錯資訊。
 
 3. 一鍵建置
    
@@ -71,14 +81,27 @@ docs/                       架構圖與文件
 
    首次執行自動下載生成與裁決模型（各約 16GB）。輸入任務內 query
    應看到 Router 判定與模型回答；輸入無關文字應看到進入
-   Model Merging 分支的訊息（即 `system/rejection.py` 的呼叫點）。
+   selected merged model 的回答。Production 啟動請明確指定 artifact：
+
+```bash
+   python main.py --mode interactive \
+     --set system.merged_model_dir=/shared/run/prepare/merged_model \
+     --set system.merged_model_required=true \
+     --set system.dtype=bfloat16
+```
+
+`merged_model_dir: null` 僅供不觸發拒絕分支的開發／router 測試。Production
+設為 required 後，路徑未設定、schema 不符、base model 不同、檔案大小或 checksum
+錯誤都會在接受輸入前停止，不會改用 base model。
  
 5. 批次執行
 ```bash
    python main.py --mode batch          # --tasks a,b 限任務、--limit n 每個任務test set只取前n筆
 ```
  
-   逐筆結果（含 Router 診斷與模型輸出）落於
+   路由命中使用 task adapter；router 拒絕則按 batch 集中使用 selected merged
+   model，不再寫 `output=null`。逐筆結果（含 Router 診斷、實際 model source、
+   condition/run identity 與模型輸出）落於
    `results/main_batch_outputs.jsonl`。
  
 之後每次開機僅需 `conda activate smoea`；步驟 2、3 為一次性作業。
@@ -106,10 +129,9 @@ python main.py --mode batch
 
 ## 從哪裡下手
 
-- **拒絕分支（Model Merging）**：入口 `system/rejection.py`——
-  介面、可用的診斷素材、與已備妥的合成/載入/生成機制
-  （`InferenceEngine.load_adapters_merged`）全寫在該檔檔頭；
-  只需實作「用哪些 adapter、各配多少權重」的決策。
+- **拒絕分支（Model Merging）**：入口 `system/rejection.py`；artifact 契約與
+  checksum 驗證在 `system/merged_model.py`，task／merged 切換在
+  `system/inference.py`。SMoEA 不會在 query 時重新 merge，也不會自動選最新 run。
 - **生成行為**（prompt、解碼參數、adapter 解析）：`system/inference.py`。
 - **新增任務**：樣本放 `dataset/`、adapter 放 `adapter/task{N}/`、
   重跑 `build_router_assets.py` 即完成擴充（送審裁決另需在

@@ -19,9 +19,9 @@ adapter 目錄結構（本 repo convention，扁平）：
   adapter/task{N}/                  直接含 adapter 檔（adapter_config.json…）
   adapter/task{N}/checkpoint-*/     或多 checkpoint——自動 sort -V 取最新
 
-【拒絕分支接口】load_adapters_merged(weights) 已備妥（PEFT
-add_weighted_adapter）——拒絕分支只需算出權重字典呼叫之，
-見 system/rejection.py。
+【拒絕分支接口】ensure_merged() 啟用 system.merged_model_dir 指定的預先產生
+artifact；支援標準 PEFT adapter 與 exact dense delta。Serving 不在 query 時重新
+merge，也不自動挑選最新 run。
 
 【scale up】adapter 逐任務獨立、熱切換 O(1) 換卡不重載 base；
 任務擴充只需在 adapter/ 底下加目錄。
@@ -31,6 +31,14 @@ import copy
 import glob
 import os
 import re
+
+from system.merged_model import (
+    DenseDeltaController,
+    MergedModelError,
+    load_merged_model_artifact,
+    validate_base_model_config,
+    validate_inference_config,
+)
 
 STOP_STRINGS = ["\nQ:", "\nQuestion:", "\n\n\n"]   # 照 inference_script2
 
@@ -67,6 +75,23 @@ class InferenceEngine:
         self.tokenizer = None
         self._loaded_adapters = {}     # task_key -> adapter_name
         self._active = None            # 目前生效的 adapter_name（None=純 base）
+        merged_dir = self.cfg.get("merged_model_dir")
+        if self.cfg.get("merged_model_required", False) and not merged_dir:
+            raise MergedModelError(
+                "production 要求 merged model，但 system.merged_model_dir 未設定")
+        self._merged_artifact = (
+            load_merged_model_artifact(
+                merged_dir,
+                expected_base_model=self.cfg["base_model"],
+            )
+            if merged_dir
+            else None
+        )
+        if self._merged_artifact is not None:
+            validate_base_model_config(self._merged_artifact)
+            validate_inference_config(self._merged_artifact, self.cfg)
+        self._merged_adapter_name = "__selected_merged__"
+        self._dense_controller = None
 
     # ------------------------------------------------------------------
     # 載入
@@ -93,25 +118,81 @@ class InferenceEngine:
             kw["torch_dtype"] = getattr(torch, self.cfg["dtype"])
         self.model = AutoModelForCausalLM.from_pretrained(name, **kw)
         self.model.eval()
+        self._load_merged_weights()
         print(f"[system] base model 就緒 "
               f"({next(self.model.parameters()).device})", flush=True)
+
+    def _load_merged_weights(self):
+        if self._merged_artifact is None:
+            return
+        artifact = self._merged_artifact
+        if artifact.format == "dense_delta_v1":
+            self._dense_controller = DenseDeltaController.attach(
+                self.model, artifact)
+            self._dense_controller.disable()
+            return
+        if artifact.format == "peft_adapter_v1":
+            from peft import PeftModel
+            self.model = PeftModel.from_pretrained(
+                self.model,
+                str(artifact.directory),
+                adapter_name=self._merged_adapter_name,
+            )
+            self._disable_peft_layers()
+            return
+        raise MergedModelError(f"不支援 merged model 格式 {artifact.format!r}")
+
+    def _disable_peft_layers(self):
+        tuner = getattr(self.model, "base_model", self.model)
+        if hasattr(tuner, "disable_adapter_layers"):
+            tuner.disable_adapter_layers()
+
+    def _enable_peft_layers(self):
+        tuner = getattr(self.model, "base_model", self.model)
+        if hasattr(tuner, "enable_adapter_layers"):
+            tuner.enable_adapter_layers()
 
     def ensure_adapter(self, task_key):
         """切到指定任務的 adapter（未載過則熱載入）。"""
         self.load_base()
+        if self._dense_controller is not None:
+            self._dense_controller.disable()
         from peft import PeftModel
         if task_key not in self._loaded_adapters:
             path = resolve_adapter_path(self.cfg["adapter_dir"], task_key)
             print(f"[system] 載入 adapter {task_key} ← {path}", flush=True)
-            if not self._loaded_adapters:                 # 第一個 adapter
+            if not hasattr(self.model, "peft_config"):
                 self.model = PeftModel.from_pretrained(
                     self.model, path, adapter_name=task_key)
             else:
                 self.model.load_adapter(path, adapter_name=task_key)
             self._loaded_adapters[task_key] = task_key
+        self._enable_peft_layers()
         if self._active != task_key:
             self.model.set_adapter(task_key)
             self._active = task_key
+
+    def ensure_merged(self):
+        """切到啟動時明確選定的 merged model，不重載 base model。"""
+        if self._merged_artifact is None:
+            raise MergedModelError(
+                "system.merged_model_dir 未設定，拒絕分支無可用 merged model")
+        self.load_base()
+        artifact = self._merged_artifact
+        if artifact.format == "dense_delta_v1":
+            self._disable_peft_layers()
+            self._dense_controller.enable()
+        else:
+            if self._dense_controller is not None:
+                self._dense_controller.disable()
+            self._enable_peft_layers()
+            self.model.set_adapter(self._merged_adapter_name)
+        self._active = self._merged_adapter_name
+        return {
+            "condition_id": artifact.condition_id,
+            "run_id": artifact.run_id,
+            "format": artifact.format,
+        }
 
     def load_adapters_merged(self, weights, merged_name="merged"):
         """【拒絕分支用】以權重合成多個任務 adapter 並切換生效。
@@ -138,6 +219,9 @@ class InferenceEngine:
         """釋放模型（分時載卸模式用）。"""
         import gc
         import torch
+        if self._dense_controller is not None:
+            self._dense_controller.close()
+            self._dense_controller = None
         self.model = None
         self.tokenizer = None
         self._loaded_adapters, self._active = {}, None

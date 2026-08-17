@@ -4,9 +4,8 @@
 main.py — SMoEA 主程式：query → Router → adapter → inference → output
 
 架構圖對應：Router 分流之後，路由樣本
-由 system/InferenceEngine 載對應任務 adapter 生成（本檔完成）；拒絕
-樣本進 Model Merging 分支（接口 system/rejection.py，待實作——
-目前拒絕樣本會印明去向並跳過生成）。
+由 system/InferenceEngine 載對應任務 adapter 生成；拒絕樣本使用
+system.merged_model_dir 明確指定的 Merged Inference Artifact。
 
 【互動模式】單筆 query 跑完整流程並顯示 router 逐步判定：
   python main.py --mode interactive
@@ -18,7 +17,7 @@ main.py — SMoEA 主程式：query → Router → adapter → inference → out
 【批次模式】跑 dataset 測試檔全部（或指定任務），逐筆路由＋生成：
   python main.py --mode batch [--tasks 3,7,10] [--limit 50]
   → results/main_batch_outputs.jsonl（每行：instance_id / query /
-    router 診斷 / 去向 / 模型輸出；拒絕樣本 output=null、留診斷）
+    router 診斷 / 去向 / 實際 model source / 模型輸出）
   流程分三段執行以省模型切換：全量分區 → 送審打分 → 按任務分組生成。
 
 【scale up】任務、adapter、樣本量全部資料驅動；生成按任務分組批次、
@@ -39,9 +38,25 @@ from router import conformal, data_io  # noqa: E402
 from router.config import config_from_cli, discover_tasks  # noqa: E402
 from router.core import Router  # noqa: E402
 from system.inference import InferenceEngine  # noqa: E402
+from system.merged_model import MergedModelError  # noqa: E402
 
 ZONE_LABEL = {0: "直判路由 (margin>floor)", 1: "綠區路由",
               2: "送審", 3: "紅區拒絕"}
+
+
+def external_task_key(task_id):
+    """將 SMoEA 內部 OOD alias 還原為公司資料使用的原始 ID。"""
+    return "task149" if int(task_id) == 9149 else f"task{int(task_id)}"
+
+
+def generation_prompt(record, field):
+    """取得 answer-free 完整題目，拒絕把本題 target 接在尾端的 record。"""
+    prompt = str(record.get("full_prompt", record.get(field, "")))
+    target = str(record.get("output", "")).strip()
+    if target and prompt.rstrip().endswith(target):
+        raise ValueError(
+            f"record {record.get('instance_id', '?')} 的 full_prompt 尾端包含本題答案")
+    return prompt
 
 
 # ---------------------------------------------------------------------------
@@ -172,7 +187,7 @@ def run_interactive(cfg, rt, preload=True):
                 from system.rejection import handle_rejection
                 out = handle_rejection(q, engine)
                 print(f"[Output]\n{out}")
-            except NotImplementedError as e:
+            except MergedModelError as e:
                 print(f"[System] {e}")
 
 
@@ -192,7 +207,7 @@ def run_batch(cfg, rt, tasks_arg, limit):
         for r in recs:
             rows.append((t, r.get("instance_id", f"task{t}-?"),
                          str(r.get(field, ""))[:3000],
-                         r.get("full_prompt", r.get(field, ""))))
+                         generation_prompt(r, field)))
     print(f"[batch] {len(wanted)} 任務、{len(rows)} 筆")
 
     texts = [r[2] for r in rows]
@@ -233,6 +248,19 @@ def run_batch(cfg, rt, tasks_arg, limit):
                 outputs[i] = o
         print(f"[batch] {task_key}: {len(idxs)} 筆生成完")
 
+    rejected = [i for i, p in enumerate(pred) if p < 0]
+    merged_info = None
+    if rejected:
+        merged_info = engine.ensure_merged()
+        for s in range(0, len(rejected), bs):
+            chunk = rejected[s:s + bs]
+            outs = engine.generate([rows[i][3] for i in chunk])
+            for i, o in zip(chunk, outs):
+                outputs[i] = o
+        print(f"[batch] merged model "
+              f"{merged_info['condition_id']}:{merged_info['run_id']}: "
+              f"{len(rejected)} 筆生成完")
+
     rd = cfg["paths"]["results_dir"]
     os.makedirs(rd, exist_ok=True)
     out_path = os.path.join(rd, "main_batch_outputs.jsonl")
@@ -243,16 +271,25 @@ def run_batch(cfg, rt, tasks_arg, limit):
             p = int(pred[i])
             if p < 0:
                 n_rej += 1
+            uses_merged = p < 0
             f.write(json.dumps(
-                {"source_task": f"task{t}", "instance_id": iid,
+                {"source_task": external_task_key(t), "instance_id": iid,
+                 "internal_task_id": (f"task{t}" if t == 9149 else None),
                  "routed_to": (f"task{rt.id_tasks[p]}" if p >= 0 else None),
-                 "diagnosis": d, "output": outputs[i]},
+                 "diagnosis": d,
+                 "model_source": ("merged_model" if uses_merged
+                                  else "task_adapter"),
+                 "merged_condition_id": (merged_info["condition_id"]
+                                         if uses_merged else None),
+                 "merged_run_id": (merged_info["run_id"]
+                                   if uses_merged else None),
+                 "output": outputs[i]},
                 ensure_ascii=False) + "\n")
     import shutil
     ts = time.strftime("%Y%m%d_%H%M%S")
     shutil.copy(out_path, out_path.replace(".jsonl", f"_{ts}.jsonl"))
-    print(f"[batch] 路由生成 {len(rows)-n_rej} 筆、拒絕 {n_rej} 筆"
-          f"（拒絕樣本 output=null，待 Adapter Merging 分支）")
+    print(f"[batch] task adapter 生成 {len(rows)-n_rej} 筆、"
+          f"merged model 生成 {n_rej} 筆")
     print(f"[done] → {out_path}（含時間戳副本）")
 
 

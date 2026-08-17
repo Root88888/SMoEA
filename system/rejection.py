@@ -11,17 +11,15 @@ system/rejection.py — 拒絕分支（Model Merging）的接入點
 輸出  str          模型輸出文本
 
 
-engine 內部是 base model＋可掛卸的 adapter 們和 tokenizer，已實作以下三個現成方法
+engine 內部是 base model＋可切換的 task／merged updates 和 tokenizer。
+merged model 在啟動時由 system.merged_model_dir 明確指定及驗證；本模組不自行
+挑選方法、掃描 runs 或即時合併。
 
 engine（system.inference.InferenceEngine，base model 已載妥）：
-  engine.load_adapters_merged({"task23": 0.6, "task10": 0.4})
-      依 {task_key: weight} 線性合成各任務 adapter 並切換生效；
-      需要其他合成方式可自行擴充 InferenceEngine 或直接操作
-      engine.model（PeftModel）。
-  engine.ensure_adapter("task23")
-      切換至單一任務 adapter。
+  engine.ensure_merged()
+      停用目前 task adapter，啟用啟動時已驗證的 merged model。
   engine.generate([prompt, ...]) -> [output, ...]
-      生成（解碼設定與 ID 路徑一致，見 system/inference.py）。
+      使用完整且不含本題答案的 prompt 生成。
 
 adapter 權重檔請放在 adapter/{task_key}/（目錄內直接放 checkpoint，
 多個 checkpoint-*/ 自動取最新）。
@@ -33,41 +31,7 @@ results/main_batch_outputs.jsonl。
 
 
 def handle_rejection(query: str, engine) -> str:
-    raise NotImplementedError("Adapter Merging 分支尚未實作。")
+    """使用啟動時選定的 Merged Inference Artifact 回答完整題目。"""
 
-
-
-
-"""
-使用範例，以下可刪
-1. 什麼都不做，用 base model
-def handle_rejection(query, engine):
+    engine.ensure_merged()
     return engine.generate([query])[0]
-
-2. 固定比例合成
-def handle_rejection(query, engine):
-    engine.load_adapters_merged({"task23": 0.5, "task10": 0.5})
-    return engine.generate([query])[0]
-
-3. 其他演算法決定線性比例
-def handle_rejection(query, engine):
-    weights = my_merging_algorithm(query) # 例如 weights = {"task23": 0.6, "task10": 0.4}
-    engine.load_adapters_merged(weights)
-    return engine.generate([query])[0]
-
-4. 在這裡寫自己的函式
-def handle_rejection(query, engine):
-    my_method(query, engine)         # 呼叫自己的函式
-    return engine.generate([query])[0]
-
-5. 先在 system.inference.InferenceEngine 實作新方法
-def handle_rejection(query, engine):
-    engine.new_method()
-    return engine.generate([query])[0]
-
-6. 直接動模型
-def handle_rejection(query, engine):
-    model = engine.model            # 標準 PeftModel，adapter 檔在 adapter/task{N}/
-    ...                             # 合成術：讀權重檔、做任何數學、改 model
-    return engine.generate([query])[0]
-"""
