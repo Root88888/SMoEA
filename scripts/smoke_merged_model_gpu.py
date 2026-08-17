@@ -23,6 +23,11 @@ def parse_args():
     parser.add_argument("--task-b", default="task1")
     parser.add_argument("--prompt", default="Q: What is 2 + 2?\nA:")
     parser.add_argument("--prompt-file")
+    parser.add_argument(
+        "--allow-empty-generation",
+        action="store_true",
+        help="只驗 loader/switch 數值；production acceptance 不可使用",
+    )
     parser.add_argument("--output", required=True)
     return parser.parse_args()
 
@@ -101,7 +106,8 @@ def main():
     merged_info = engine.ensure_merged()
     merged_logits = last_token_logits(engine, prompt)
     merged_text = engine.generate([prompt])[0]
-    if not merged_text.strip():
+    generation_nonempty = bool(merged_text.strip())
+    if not generation_nonempty and not args.allow_empty_generation:
         raise AssertionError("merged model generation was empty or whitespace only")
     engine.ensure_adapter(args.task_b)
     task_b_logits = last_token_logits(engine, prompt)
@@ -135,6 +141,7 @@ def main():
         "task_a_vs_merged_max_abs_difference": task_a_vs_merged,
         "task_b_vs_merged_max_abs_difference": task_b_vs_merged,
         "merged_generation": merged_text,
+        "generation_nonempty": generation_nonempty,
         "peak_cuda_memory_bytes": int(torch.cuda.max_memory_allocated()),
         "gpu": torch.cuda.get_device_name(0),
     }
