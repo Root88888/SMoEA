@@ -22,6 +22,7 @@ def parse_args():
     parser.add_argument("--task-a", default="task0")
     parser.add_argument("--task-b", default="task1")
     parser.add_argument("--prompt", default="Q: What is 2 + 2?\nA:")
+    parser.add_argument("--prompt-file")
     parser.add_argument("--output", required=True)
     return parser.parse_args()
 
@@ -41,6 +42,11 @@ def main():
     from safetensors.torch import load_file
 
     args = parse_args()
+    prompt = (
+        Path(args.prompt_file).read_text(encoding="utf-8")
+        if args.prompt_file
+        else args.prompt
+    )
     artifact = load_merged_model_artifact(args.artifact)
     cfg = {
         "system": {
@@ -85,14 +91,16 @@ def main():
         )
 
     engine.ensure_adapter(args.task_a)
-    task_a_first = last_token_logits(engine, args.prompt)
+    task_a_first = last_token_logits(engine, prompt)
     merged_info = engine.ensure_merged()
-    merged_logits = last_token_logits(engine, args.prompt)
-    merged_text = engine.generate([args.prompt])[0]
+    merged_logits = last_token_logits(engine, prompt)
+    merged_text = engine.generate([prompt])[0]
+    if not merged_text.strip():
+        raise AssertionError("merged model generation was empty or whitespace only")
     engine.ensure_adapter(args.task_b)
-    task_b_logits = last_token_logits(engine, args.prompt)
+    task_b_logits = last_token_logits(engine, prompt)
     engine.ensure_adapter(args.task_a)
-    task_a_second = last_token_logits(engine, args.prompt)
+    task_a_second = last_token_logits(engine, prompt)
 
     task_a_restore_error = float(
         (task_a_first - task_a_second).abs().max()
@@ -115,6 +123,7 @@ def main():
         "base_model": artifact.base_model_name,
         "torch_dtype": artifact.torch_dtype,
         "task_sequence": [args.task_a, "merged_model", args.task_b, args.task_a],
+        "prompt": prompt,
         "layer_max_abs_error": layer_max_abs_error,
         "task_a_restore_max_abs_error": task_a_restore_error,
         "task_a_vs_merged_max_abs_difference": task_a_vs_merged,
