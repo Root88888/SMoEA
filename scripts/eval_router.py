@@ -44,6 +44,12 @@ from router.config import config_from_cli, discover_tasks  # noqa: E402
 from router.core import Router  # noqa: E402
 
 QUEUE = "escalation_queue.jsonl"
+ABL_SUFFIX = ""
+GRAY_MODE = "verdict"
+
+
+def _q(rd):
+    return os.path.join(rd, QUEUE.replace(".jsonl", ABL_SUFFIX + ".jsonl"))
 SCORES = "escalation_scores.jsonl"
 ZONES = "eval_zones.npz"
 
@@ -65,7 +71,7 @@ def _sources(cfg, rt, id_tasks, ood_tasks):
 
 def mode_decide(cfg, rt, id_tasks, ood_tasks, rd):
     zpath = os.path.join(rd, ZONES)
-    qpath = os.path.join(rd, QUEUE)
+    qpath = _q(rd)
     store, n_esc = {}, 0
     with open(qpath, "w", encoding="utf-8") as fq:
         line_no = 0
@@ -94,13 +100,15 @@ def mode_decide(cfg, rt, id_tasks, ood_tasks, rd):
 
 
 def mode_score(cfg, rt, rd, fake=False):
-    qpath, spath = os.path.join(rd, QUEUE), os.path.join(rd, SCORES)
+    qpath, spath = _q(rd), os.path.join(rd, SCORES)
     with open(qpath, encoding="utf-8") as f:
         lines = [json.loads(l) for l in f if l.strip()]
     done = set()
     if os.path.exists(spath):
         with open(spath, encoding="utf-8") as f:
-            done = {json.loads(l)["line_no"] for l in f if l.strip()}
+            done = {(j["source"], j["row"]) for l in f if l.strip()
+                    for j in (json.loads(l),)}   # 以 (source,row) 去重：
+            #   不同 ablation 變體的佇列行號各自獨立，line_no 不可當 key
     print(f"佇列 {len(lines)} 筆，已完成 {len(done)}")
     descs = rt.load_descriptions()
     if fake:
@@ -116,7 +124,7 @@ def mode_score(cfg, rt, rd, fake=False):
     every = cfg["verifier"]["checkpoint_every"]
     with open(spath, "a", encoding="utf-8") as fo:
         for ln in lines:
-            if ln["line_no"] in done:
+            if (ln["source"], ln["row"]) in done:
                 continue
             ps = [score_candidate(scorer,
                                   descs[str(u)]["description"],
@@ -153,7 +161,7 @@ def mode_run(cfg, rt, id_tasks, ood_tasks, rd):
         esc = {r: s for (s2, r), s in scores.items() if s2 == src}
         dec = {"zone": Z[f"{src}__zone"], "b1": Z[f"{src}__b1"],
                "top3_units": Z[f"{src}__top3"], "tS": tS, "esc": esc}
-        return rt.finalize(dec, count_missing=True)
+        return rt.finalize(dec, count_missing=True, gray=GRAY_MODE)
 
     # ID
     te_emb = np.concatenate([data_io.load_embeddings(cfg, t, test=True)
@@ -207,7 +215,7 @@ def mode_run(cfg, rt, id_tasks, ood_tasks, rd):
     for k in ("direct", "green", "red", "esc_route", "esc_rej"):
         print(f"  {k:<11}{cid[k]:>7}  {cood[k]:>7}  {cid[k]+cood[k]:>7}")
 
-    out = os.path.join(rd, "router_eval_results.json")
+    out = os.path.join(rd, f"router_eval_results{ABL_SUFFIX}.json")
     with open(out, "w", encoding="utf-8") as f:
         json.dump(rep, f, ensure_ascii=False, indent=1)
     import shutil
@@ -220,9 +228,25 @@ def main():
     cfg, args = config_from_cli(lambda p: (
         p.add_argument("--mode", required=True,
                        choices=["decide", "score", "run"]),
-        p.add_argument("--fake_verifier", action="store_true")))
+        p.add_argument("--fake_verifier", action="store_true"),
+        p.add_argument("--ablate", default="none",
+                       choices=["none", "no_multicentroid", "no_direct",
+                                "no_lexical", "gray_reject", "gray_route"],
+                       help="ablation 變體（見檔頭；no_multicentroid 需先以 "
+                            "k_max=1 build 變體資產至 assets_ablate_nomc/）")))
     rd = cfg["paths"]["results_dir"]
     os.makedirs(rd, exist_ok=True)
+    ab = args.ablate
+    if ab == "no_multicentroid":
+        if cfg["paths"]["assets_dir"] == "assets":     # 使用者 --set 過則尊重之
+            cfg["paths"]["assets_dir"] = "assets_ablate_nomc"
+    elif ab == "no_direct":
+        cfg["thresholds"]["transfer_floor"] = 999.0
+    elif ab == "no_lexical":
+        cfg["thresholds"]["use_lexical"] = False
+    globals()["ABL_SUFFIX"] = "" if ab == "none" else f"__{ab}"
+    globals()["GRAY_MODE"] = ("reject" if ab == "gray_reject" else
+                              "route" if ab == "gray_route" else "verdict")
     rt = Router.load(cfg)
     id_tasks, ood_tasks = discover_tasks(cfg)
     assert id_tasks == rt.id_tasks, \
