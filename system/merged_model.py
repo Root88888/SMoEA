@@ -19,6 +19,7 @@ class ModuleSpec:
     tensor_name: str
     shape: tuple[int, ...]
     dtype: str
+    role: str | None = None
 
 
 @dataclass(frozen=True)
@@ -258,10 +259,12 @@ def load_merged_model_artifact(
     if not isinstance(raw_weights, list) or not raw_weights:
         raise MergedModelError("result.json must list at least one weight file")
     weight_files = []
+    relative_weight_paths = []
     for item in raw_weights:
         if not isinstance(item, dict):
             raise MergedModelError("each weight entry must be an object")
         path = _safe_file(root, item.get("path"))
+        relative_weight_paths.append(str(item.get("path")))
         expected_bytes = item.get("bytes")
         if not isinstance(expected_bytes, int) or expected_bytes < 0:
             raise MergedModelError(f"invalid byte size for weight file {path.name}")
@@ -274,6 +277,20 @@ def load_merged_model_artifact(
         if not isinstance(expected_digest, str) or _sha256(path) != expected_digest:
             raise MergedModelError(f"weight checksum mismatch for {path}")
         weight_files.append(path)
+    if format_name == "dense_delta_v1" and relative_weight_paths != [
+        "dense_delta.safetensors"
+    ]:
+        raise MergedModelError(
+            "dense_delta_v1 requires exactly dense_delta.safetensors"
+        )
+    if format_name == "peft_adapter_v1" and set(relative_weight_paths) != {
+        "adapter_config.json",
+        "adapter_model.safetensors",
+    }:
+        raise MergedModelError(
+            "peft_adapter_v1 requires adapter_config.json and "
+            "adapter_model.safetensors"
+        )
 
     raw_modules = payload.get("modules", [])
     if not isinstance(raw_modules, list):
@@ -293,13 +310,14 @@ def load_merged_model_artifact(
                 tensor_name=_text(item, "tensor_name"),
                 shape=tuple(shape),
                 dtype=_text(item, "dtype"),
+                role=item.get("role"),
             )
         )
-    if len({module.name for module in modules}) != len(modules):
-        raise MergedModelError("merged model module names must be unique")
     if len({module.tensor_name for module in modules}) != len(modules):
         raise MergedModelError("merged model tensor names must be unique")
     if format_name == "dense_delta_v1":
+        if len({module.name for module in modules}) != len(modules):
+            raise MergedModelError("dense delta module names must be unique")
         expected_count = payload.get("expected_module_count")
         if not isinstance(expected_count, int) or expected_count <= 0:
             raise MergedModelError("dense delta requires a positive module count")
@@ -307,6 +325,26 @@ def load_merged_model_artifact(
             raise MergedModelError(
                 f"dense delta lists {len(modules)} modules; expected {expected_count}"
             )
+    else:
+        expected_modules = payload.get("expected_module_count")
+        expected_tensors = payload.get("expected_tensor_count")
+        if not isinstance(expected_modules, int) or expected_modules <= 0:
+            raise MergedModelError("PEFT adapter requires a positive module count")
+        if not isinstance(expected_tensors, int) or expected_tensors <= 0:
+            raise MergedModelError("PEFT adapter requires a positive tensor count")
+        if len({module.name for module in modules}) != expected_modules:
+            raise MergedModelError(
+                "PEFT adapter module inventory does not match expected count"
+            )
+        if len(modules) != expected_tensors:
+            raise MergedModelError(
+                "PEFT adapter tensor inventory does not match expected count"
+            )
+        roles_by_module: dict[str, set[str | None]] = {}
+        for module in modules:
+            roles_by_module.setdefault(module.name, set()).add(module.role)
+        if any(roles != {"lora_A", "lora_B"} for roles in roles_by_module.values()):
+            raise MergedModelError("PEFT adapter requires paired lora_A/lora_B tensors")
 
     return MergedModelArtifact(
         directory=root.resolve(),

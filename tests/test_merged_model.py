@@ -14,6 +14,54 @@ from system.merged_model import (
 
 
 class MergedModelArtifactTests(unittest.TestCase):
+    def _write_peft_artifact(self, root):
+        config = root / "adapter_config.json"
+        model = root / "adapter_model.safetensors"
+        config.write_text('{"peft_type":"LORA"}', encoding="utf-8")
+        model.write_bytes(b"tiny-peft-adapter")
+        weights = []
+        for path in (config, model):
+            weights.append(
+                {
+                    "path": path.name,
+                    "bytes": path.stat().st_size,
+                    "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+                }
+            )
+        payload = {
+            "schema_version": 1,
+            "format": "peft_adapter_v1",
+            "condition_id": "task_arithmetic",
+            "run_id": "run-peft",
+            "base_model": {
+                "name": "base",
+                "revision": "revision",
+                "config_sha256": "c" * 64,
+            },
+            "inference": {"torch_dtype": "bfloat16", "quantization": "none"},
+            "weights": weights,
+            "expected_module_count": 1,
+            "expected_tensor_count": 2,
+            "modules": [
+                {
+                    "name": "model.layers.0.mlp.down_proj",
+                    "tensor_name": "base_model.model.model.layers.0.mlp.down_proj.lora_A.weight",
+                    "role": "lora_A",
+                    "shape": [1, 3],
+                    "dtype": "float32",
+                },
+                {
+                    "name": "model.layers.0.mlp.down_proj",
+                    "tensor_name": "base_model.model.model.layers.0.mlp.down_proj.lora_B.weight",
+                    "role": "lora_B",
+                    "shape": [2, 1],
+                    "dtype": "float32",
+                },
+            ],
+        }
+        (root / "result.json").write_text(json.dumps(payload), encoding="utf-8")
+        return payload
+
     def _write_dense_artifact(self, root, *, weight_path="dense_delta.safetensors"):
         weight = root / "dense_delta.safetensors"
         weight.write_bytes(b"tiny-dense-delta")
@@ -154,6 +202,23 @@ class MergedModelArtifactTests(unittest.TestCase):
                 artifact,
                 {"dtype": "float16", "load_in_4bit": False},
             )
+
+    def test_loads_a_standard_peft_adapter_artifact(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self._write_peft_artifact(root)
+
+            artifact = load_merged_model_artifact(
+                root,
+                expected_base_model="base",
+            )
+
+        self.assertEqual(artifact.format, "peft_adapter_v1")
+        self.assertEqual(
+            [path.name for path in artifact.weight_files],
+            ["adapter_config.json", "adapter_model.safetensors"],
+        )
+        self.assertEqual(len(artifact.modules), 2)
 
 
 if __name__ == "__main__":
