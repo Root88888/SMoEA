@@ -126,7 +126,9 @@ class Router:
                 "n_calibration": int(self.cal_margin.size),
                 "thresholds": self.cfg["thresholds"],
                 "embedding_model": self.cfg["embedding"]["model_name"],
-                "field": self.cfg["data"]["field"]}
+                "field": self.cfg["data"]["field"],
+                "routing_text": self.cfg["data"].get(
+                    "routing_text", self.cfg["data"]["field"])}
         with open(os.path.join(ad, ASSET_META), "w", encoding="utf-8") as f:
             json.dump(meta, f, ensure_ascii=False, indent=1)
         with open(os.path.join(ad, ASSET_LEX), "wb") as f:
@@ -163,6 +165,15 @@ class Router:
         r.cal_b1, r.cal_margin = z["cal_b1"], z["cal_margin"]
         with open(os.path.join(ad, ASSET_META), encoding="utf-8") as f:
             meta = json.load(f)
+        asset_routing_text = meta.get("routing_text", meta.get("field"))
+        configured_routing_text = cfg["data"].get(
+            "routing_text", cfg["data"]["field"])
+        if (asset_routing_text is not None and
+                asset_routing_text != configured_routing_text):
+            raise ValueError(
+                "router asset 的 routing_text="
+                f"{asset_routing_text}，但設定為 {configured_routing_text}；"
+                "請使用建置資產時相同的 data.routing_text")
         r.id_tasks = meta["id_tasks"]
         r.t_index = {t: i for i, t in enumerate(r.id_tasks)}
         r.units = [list(g) for g in meta["units"]]

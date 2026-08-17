@@ -65,6 +65,8 @@ def main():
         id_tasks, ood_tasks = discover_tasks(cfg)
         print(f"任務集合：ID {len(id_tasks)} 個、OOD {len(ood_tasks)} 個"
               f"（由 {cfg['paths']['dataset_dir']} 掃描推導）")
+    routing_text = cfg["data"].get("routing_text", cfg["data"]["field"])
+    print(f"路由文字：{routing_text}")
 
     # ---- 嵌入快取 ----
     n1 = ensure_task_embeddings(cfg, id_tasks, test=False)
@@ -97,6 +99,7 @@ def main():
     with open(out, "w", encoding="utf-8") as f:
         json.dump({"n_id_tasks": len(id_tasks), "n_ood_tasks": len(ood_tasks),
                    "id_tasks": id_tasks, "ood_tasks": ood_tasks,
+                   "routing_text": routing_text,
                    "units": us, "k_by_task": multi_k,
                    "n_calibration": int(r.cal_margin.size)},
                   f, ensure_ascii=False, indent=1)

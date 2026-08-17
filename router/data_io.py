@@ -2,7 +2,7 @@
 """
 router/data_io.py
 
-【資料層】樣本檔讀取、檔名解析、嵌入快取讀寫、OOD 標記檔解析。
+【資料層】樣本檔讀取、路由文字準備、檔名解析、嵌入快取讀寫、OOD 標記檔解析。
 來源：BM25 baseline（fork 定稿版）的 read_texts / find_file 原樣收編——
 支援三種樣本檔格式（json array / dict 包裹 / jsonl）與多種檔名 stem，
 其中 task{t}_train.json / task{t}_test.json 是 repo dataset 的標準命名。
@@ -23,7 +23,7 @@ import numpy as np
 # ---------------------------------------------------------------------------
 # 樣本檔
 # ---------------------------------------------------------------------------
-def read_texts(path, field, clip_chars):
+def read_texts(path, field, clip_chars, strip_output=False):
     """讀樣本檔的 field 欄位。支援：json array / dict 包裹的樣本列表 / jsonl。"""
     with open(path, encoding="utf-8") as f:
         raw = f.read()
@@ -46,10 +46,21 @@ def read_texts(path, field, clip_chars):
                         f"{path} 是 dict 但找不到唯一樣本列表，"
                         f"頂層鍵：{list(obj.keys())[:8]}")
         assert isinstance(obj, list), f"{path} 頂層非列表"
-        return [str(r.get(field, ""))[:clip_chars] for r in obj]
+        records = obj
     except json.JSONDecodeError:                # jsonl
-        return [str(json.loads(l).get(field, ""))[:clip_chars]
-                for l in raw.splitlines() if l.strip()]
+        records = [json.loads(l) for l in raw.splitlines() if l.strip()]
+    texts = []
+    for r in records:
+        text = str(r.get(field, ""))
+        if strip_output:
+            output = str(r.get("output", ""))
+            if not output or not text.endswith(output):
+                raise ValueError(
+                    f"{path}: 訓練 full_prompt 未以 output 結尾，"
+                    "無法安全建立不含答案的 route prompt")
+            text = text[:-len(output)]
+        texts.append(text[:clip_chars])
+    return texts
 
 
 def find_file(dirpath, task_id, test=False):
@@ -70,12 +81,23 @@ def find_file(dirpath, task_id, test=False):
 
 
 def load_task_texts(cfg, task_id, test=False):
-    """依設定讀一個任務的全部樣本文本。"""
+    """依設定讀一個任務的路由文字。
+
+    answer_free_full_prompt 模式在 train 資料把尾端的標準 output 精確移除；
+    test 的 full_prompt 本來就不含答案，因此原樣使用。
+    """
     ds = cfg["paths"]["dataset_dir"]
     sub = "test_data" if test else "train_data"
     path = find_file(os.path.join(ds, sub), task_id, test=test)
-    return read_texts(path, cfg["data"]["field"],
-                      cfg["data"]["doc_clip_chars"])
+    mode = cfg["data"].get("routing_text", cfg["data"]["field"])
+    if mode == "answer_free_full_prompt":
+        return read_texts(
+            path,
+            "full_prompt",
+            cfg["data"]["doc_clip_chars"],
+            strip_output=not test,
+        )
+    return read_texts(path, mode, cfg["data"]["doc_clip_chars"])
 
 
 # ---------------------------------------------------------------------------
@@ -123,7 +145,7 @@ def load_ood_groundtruth(path):
 def load_task_records(cfg, task_id, test=False):
     """讀一個任務的完整樣本紀錄（instances 原欄位：input / output /
     instance_id / full_prompt…）。生成執行層（system/）用它取
-    full_prompt 當 prompt；路由層仍走 load_task_texts（field 欄）。"""
+    full_prompt 當 prompt；路由層仍走 load_task_texts 準備路由文字。"""
     ds = cfg["paths"]["dataset_dir"]
     sub = "test_data" if test else "train_data"
     path = find_file(os.path.join(ds, sub), task_id, test=test)

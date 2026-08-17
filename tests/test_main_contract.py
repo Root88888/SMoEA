@@ -1,10 +1,25 @@
 import unittest
 from unittest.mock import Mock, patch
 
-from main import external_task_key, generation_prompt, run_interactive
+from main import (
+    external_task_key,
+    generation_prompt,
+    read_interactive_request,
+    run_interactive,
+)
 
 
 class MainContractTests(unittest.TestCase):
+    @patch(
+        "builtins.input",
+        side_effect=[":paste", "Task instructions", "Input text", ":send"],
+    )
+    def test_interactive_paste_mode_sends_one_multiline_request(self, _input):
+        self.assertEqual(
+            read_interactive_request(),
+            "Task instructions\nInput text",
+        )
+
     def test_generation_uses_the_answer_free_full_prompt(self):
         record = {
             "instance_id": "sample-1",

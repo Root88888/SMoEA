@@ -2,8 +2,8 @@
 """
 router/embedding.py
 
-【嵌入層】sentence-transformers 封裝（預設 BAAI/bge-large-en-v1.5，
-field=input）。模型延遲載入：ensure_task_embeddings 若快取已存在
+【嵌入層】sentence-transformers 封裝（預設 BAAI/bge-large-en-v1.5）。
+路由文字由 data.routing_text 決定。模型延遲載入：ensure_task_embeddings 若快取已存在
 （assets/emb_task{t}.npz / emb_test_task{t}.npz）直接跳過、完全不碰
 模型——因此在已有快取的環境（含測試環境）零 GPU、零下載。
 

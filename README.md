@@ -83,8 +83,10 @@ docs/                       架構圖與文件
    python main.py --mode interactive
 ```
 
-   首次執行自動下載生成與裁決模型（各約 16GB）。輸入任務內 query
-   應看到 Router 判定與模型回答；輸入無關文字應看到進入
+   首次執行自動下載生成與裁決模型（各約 16GB）。請輸入完整任務要求與內容
+   （相當於不含答案的 `full_prompt`）。多行內容先輸入 `:paste`，貼完後以
+   單獨一行 `:send` 送出。應看到 Router 判定與模型回答；
+   輸入無關文字應看到進入
    selected merged model 的回答。Production 啟動請明確指定 artifact：
 
 ```bash
@@ -117,7 +119,7 @@ docs/                       架構圖與文件
 ## 使用
 
 ```bash
-# 互動：單筆 query 跑完整流程，逐步顯示 Router 判定
+# 互動：單筆完整請求跑完整流程，逐步顯示 Router 判定
 python main.py --mode interactive
 
 # 批次：跑 dataset 測試檔（--tasks 3,7 限任務、--limit 50 試跑）
@@ -128,7 +130,7 @@ python main.py --mode batch
 互動模式輸出範例：
 
 ```
-> <query>
+> <完整任務要求與內容，不含答案>
 [Router] margin=0.183  p=0.42  詞彙一致✓
 [Router] top-3：task23(sim 0.87)  task10(sim 0.71)  task24(sim 0.66)
 [Router] 判定：綠區路由 → task23
@@ -150,5 +152,18 @@ python main.py --mode batch
 ## 資料格式
 
 樣本檔 `{"task_key", "task_name", "definition", "instances": [...]}`，
-每筆 instance 含 `input`（路由用）、`full_prompt`（生成 prompt）、
+每筆 instance 含 `input`、`full_prompt`（完整任務說明與使用者輸入）、
 `output`、`instance_id`；亦相容純 array 與 JSONL。
+
+交付預設 `data.routing_text=answer_free_full_prompt` 使用完整、但不含標準答案的
+請求建 router，因為本專案 task0–14 的 `input` 沒有完整任務說明：
+
+```bash
+python scripts/build_router_assets.py --serving-only
+```
+
+訓練資料的 `full_prompt` 尾端必須精確等於 `output`；建置時只移除這段答案。
+測試資料與互動輸入本來不含答案，會直接使用完整請求。建置出的
+`router_assets_meta.json` 會記錄 `routing_text`，可避免混淆兩套路由資產。
+若要重現上游直接使用短 `input` 的 router，才顯式加上
+`--set data.routing_text=input`，並使用另一個 assets 目錄。

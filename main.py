@@ -130,6 +130,29 @@ def print_diagnosis(d):
 # ---------------------------------------------------------------------------
 # 互動模式
 # ---------------------------------------------------------------------------
+def read_interactive_request():
+    """讀一筆互動請求；`:paste` 可收集多行，直到單獨一行 `:send`。"""
+    try:
+        first = input("\n> ").strip()
+    except (EOFError, KeyboardInterrupt):
+        return None
+    if first.lower() in ("exit", "quit"):
+        return None
+    if first != ":paste":
+        return first
+
+    print("[輸入] 貼上完整任務要求與內容；單獨一行 :send 送出")
+    lines = []
+    while True:
+        try:
+            line = input()
+        except (EOFError, KeyboardInterrupt):
+            return "\n".join(lines).strip() or None
+        if line.strip() == ":send":
+            return "\n".join(lines).strip()
+        lines.append(line)
+
+
 def run_interactive(cfg, rt, preload=True):
     engine = InferenceEngine(cfg)
     vmode = cfg["system"]["verifier_mode"]
@@ -152,14 +175,15 @@ def run_interactive(cfg, rt, preload=True):
             # adapter 熱切換（秒級）與生成本身。swap 模式不預載
             # 生成模型（其設計本來就是用到才載、判完即卸）。
             engine.load_base()
-    print("\n===== SMoEA 互動模式（輸入 query，exit 離開）=====")
+    print("\n===== SMoEA 互動模式 =====")
+    print("單行請求可直接輸入；多行請求先輸入 :paste，貼完以 :send 送出；"
+          "exit 離開")
     while True:
-        try:
-            q = input("\n> ").strip()
-        except (EOFError, KeyboardInterrupt):
+        q = read_interactive_request()
+        if q is None:
             break
-        if not q or q.lower() in ("exit", "quit"):
-            break
+        if not q:
+            continue
         dec = rt.decide([q])
         z = int(dec["zone"][0])
         if z == conformal.ZONE_ESCALATE:

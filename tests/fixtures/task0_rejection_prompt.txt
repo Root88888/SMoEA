@@ -1,0 +1,5 @@
+:paste
+Modify the following sentence by changing its Gender:
+Sentence: The lawyer asked the witness a question, but he was reluctant to repeat it.
+Modified sentence:
+:send
