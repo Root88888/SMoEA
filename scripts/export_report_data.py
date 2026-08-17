@@ -148,7 +148,8 @@ def main():
             "per_task_id": {t: {"acc_task": r["acc_task"],
                                 "acc_unit": r["acc_unit"]}
                             for t, r in rep["per_task_id"].items()},
-            "per_task_ood": {t: r["reject_rate"]
+            "per_task_ood": {t: {"reject_rate": r["reject_rate"],
+                                 "top_routes": r["top_routes"][:1]}
                              for t, r in rep["per_task_ood"].items()}}
 
     out["baselines"] = {}
@@ -165,7 +166,8 @@ def main():
             "per_task_id": {t: {"acc_task": r["acc_task"],
                                 "acc_unit": r["acc_unit"]}
                             for t, r in rep["per_task_id"].items()},
-            "per_task_ood": {t: r["reject_rate"]
+            "per_task_ood": {t: {"reject_rate": r["reject_rate"],
+                                 "top_routes": r["top_routes"][:1]}
                              for t, r in rep["per_task_ood"].items()}}
 
     out["missing"] = missing

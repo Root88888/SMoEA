@@ -50,6 +50,10 @@ GRAY_MODE = "verdict"
 
 def _q(rd):
     return os.path.join(rd, QUEUE.replace(".jsonl", ABL_SUFFIX + ".jsonl"))
+
+
+def _z(rd):
+    return os.path.join(rd, ZONES.replace(".npz", ABL_SUFFIX + ".npz"))
 SCORES = "escalation_scores.jsonl"
 ZONES = "eval_zones.npz"
 
@@ -70,7 +74,7 @@ def _sources(cfg, rt, id_tasks, ood_tasks):
 
 
 def mode_decide(cfg, rt, id_tasks, ood_tasks, rd):
-    zpath = os.path.join(rd, ZONES)
+    zpath = _z(rd)
     qpath = _q(rd)
     store, n_esc = {}, 0
     with open(qpath, "w", encoding="utf-8") as fq:
@@ -143,7 +147,7 @@ def mode_score(cfg, rt, rd, fake=False):
 
 
 def mode_run(cfg, rt, id_tasks, ood_tasks, rd):
-    Z = np.load(os.path.join(rd, ZONES))
+    Z = np.load(_z(rd))
     scores = {}
     spath = os.path.join(rd, SCORES)
     if os.path.exists(spath):
