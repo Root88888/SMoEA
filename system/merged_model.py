@@ -16,6 +16,7 @@ class MergedModelError(RuntimeError):
 @dataclass(frozen=True)
 class ModuleSpec:
     name: str
+    tensor_name: str
     shape: tuple[int, ...]
     dtype: str
 
@@ -60,7 +61,7 @@ class DenseDeltaController:
         from safetensors.torch import load_file
 
         tensors = load_file(str(artifact.weight_files[0]), device="cpu")
-        expected_names = {spec.name for spec in artifact.modules}
+        expected_names = {spec.tensor_name for spec in artifact.modules}
         if set(tensors) != expected_names:
             raise MergedModelError(
                 "dense delta tensor names differ from result.json module inventory"
@@ -74,7 +75,7 @@ class DenseDeltaController:
                 raise MergedModelError(
                     f"dense target {spec.name!r} must be Linear; found {found}"
                 )
-            delta = tensors[spec.name]
+            delta = tensors[spec.tensor_name]
             if tuple(delta.shape) != spec.shape:
                 raise MergedModelError(
                     f"dense tensor shape mismatch for {spec.name}: "
@@ -289,12 +290,15 @@ def load_merged_model_artifact(
         modules.append(
             ModuleSpec(
                 name=_text(item, "name"),
+                tensor_name=_text(item, "tensor_name"),
                 shape=tuple(shape),
                 dtype=_text(item, "dtype"),
             )
         )
     if len({module.name for module in modules}) != len(modules):
         raise MergedModelError("merged model module names must be unique")
+    if len({module.tensor_name for module in modules}) != len(modules):
+        raise MergedModelError("merged model tensor names must be unique")
     if format_name == "dense_delta_v1":
         expected_count = payload.get("expected_module_count")
         if not isinstance(expected_count, int) or expected_count <= 0:

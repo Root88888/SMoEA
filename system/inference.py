@@ -96,6 +96,14 @@ class InferenceEngine:
     # ------------------------------------------------------------------
     # 載入
     # ------------------------------------------------------------------
+    def _base_revision_kwargs(self):
+        if self._merged_artifact is None:
+            return {}
+        revision = self._merged_artifact.base_model_revision
+        if revision in {"local", "unresolved"}:
+            return {}
+        return {"revision": revision}
+
     def load_base(self):
         if self.model is not None:
             return
@@ -105,11 +113,12 @@ class InferenceEngine:
         print(f"[system] 載入 base model {name} "
               f"({'4bit' if self.cfg['load_in_4bit'] else self.cfg['dtype']})…",
               flush=True)
-        self.tokenizer = AutoTokenizer.from_pretrained(name)
+        revision_kwargs = self._base_revision_kwargs()
+        self.tokenizer = AutoTokenizer.from_pretrained(name, **revision_kwargs)
         if self.tokenizer.pad_token is None:
             self.tokenizer.pad_token = self.tokenizer.eos_token
         self.tokenizer.padding_side = "left"   # 照原設定
-        kw = {"device_map": "auto"}
+        kw = {"device_map": "auto", **revision_kwargs}
         if self.cfg["load_in_4bit"]:
             from transformers import BitsAndBytesConfig
             kw["quantization_config"] = BitsAndBytesConfig(

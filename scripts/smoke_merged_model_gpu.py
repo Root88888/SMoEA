@@ -61,7 +61,7 @@ def main():
     # Check one real module against the explicit base(x) + delta(x) equation.
     spec = artifact.modules[0]
     module = dict(engine.model.named_modules())[spec.name]
-    delta = load_file(str(artifact.weight_files[0]), device="cpu")[spec.name]
+    delta = load_file(str(artifact.weight_files[0]), device="cpu")[spec.tensor_name]
     inputs = torch.randn(
         1,
         2,

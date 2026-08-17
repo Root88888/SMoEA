@@ -51,6 +51,7 @@ class MergedModelArtifactTests(unittest.TestCase):
             "modules": [
                 {
                     "name": "model.layers.0.mlp.down_proj",
+                    "tensor_name": "model.layers.0.mlp.down_proj.delta_weight",
                     "shape": [2, 3],
                     "dtype": "bfloat16",
                 }
@@ -93,6 +94,10 @@ class MergedModelArtifactTests(unittest.TestCase):
         self.assertEqual(artifact.run_id, "run-123")
         self.assertEqual(artifact.weight_files, (weight,))
         self.assertEqual(artifact.modules[0].name, "model.layers.0.mlp.down_proj")
+        self.assertEqual(
+            artifact.modules[0].tensor_name,
+            "model.layers.0.mlp.down_proj.delta_weight",
+        )
         self.assertEqual(artifact.modules[0].shape, (2, 3))
         self.assertEqual(artifact.torch_dtype, "bfloat16")
         self.assertEqual(artifact.quantization, "none")

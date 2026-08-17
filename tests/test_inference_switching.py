@@ -38,6 +38,24 @@ class FakeDenseController:
 
 
 class InferenceSwitchingTests(unittest.TestCase):
+    def test_selected_artifact_revision_is_used_for_base_loading(self):
+        cfg = {
+            "system": {
+                "base_model": "base",
+                "adapter_dir": "adapter",
+                "merged_model_dir": None,
+            }
+        }
+        engine = InferenceEngine(cfg)
+        engine._merged_artifact = SimpleNamespace(
+            base_model_revision="exact-hub-commit"
+        )
+
+        self.assertEqual(
+            engine._base_revision_kwargs(),
+            {"revision": "exact-hub-commit"},
+        )
+
     def test_production_requires_an_explicit_merged_model_directory(self):
         cfg = {
             "system": {

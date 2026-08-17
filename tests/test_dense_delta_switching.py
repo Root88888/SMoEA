@@ -30,7 +30,7 @@ class DenseDeltaSwitchingTests(unittest.TestCase):
             root = Path(directory)
             weight = root / "dense_delta.safetensors"
             save_file(
-                {"model.layers.0.mlp.down_proj": torch.ones(2, 2)},
+                {"model.layers.0.mlp.down_proj.delta_weight": torch.ones(2, 2)},
                 weight,
             )
             digest = hashlib.sha256(weight.read_bytes()).hexdigest()
@@ -63,6 +63,9 @@ class DenseDeltaSwitchingTests(unittest.TestCase):
                         "modules": [
                             {
                                 "name": "model.layers.0.mlp.down_proj",
+                                "tensor_name": (
+                                    "model.layers.0.mlp.down_proj.delta_weight"
+                                ),
                                 "shape": [2, 2],
                                 "dtype": "float32",
                             }
