@@ -1,6 +1,6 @@
 # SMoEA — Scalable Mixture-of-Experts Adapters
 
-![architecture](docs/architecture.png)
+![architecture](docs/architecture.jpg)
 
 ## 目錄結構
 
