@@ -74,14 +74,15 @@ def replay_main(cfg, rt, id_tasks, ood_tasks, rd):
         for zk, zname in ((conformal.ZONE_FLOOR, "direct"),
                           (conformal.ZONE_GREEN, "green")):
             mm = zt == zk
-            row[zname] = {"ok": int((upt[mm] == uy).sum()),
-                          "bad": int((pt[mm] >= 0).sum()
-                                     - (upt[mm] == uy).sum())}
-        row["red"] = {"rej": int((zt == conformal.ZONE_RED).sum())}
+            row[zname] = {"routed_correct": int((upt[mm] == uy).sum()),
+                          "routed_wrong": int((pt[mm] >= 0).sum()
+                                              - (upt[mm] == uy).sum())}
+        row["red"] = {"rejected": int((zt == conformal.ZONE_RED).sum())}
         me = zt == conformal.ZONE_ESCALATE
-        row["esc"] = {"ok": int((upt[me] == uy).sum()),
-                      "bad": int(((pt[me] >= 0) & (upt[me] != uy)).sum()),
-                      "rej": int((pt[me] < 0).sum())}
+        row["esc"] = {"routed_correct": int((upt[me] == uy).sum()),
+                      "routed_wrong": int(((pt[me] >= 0)
+                                           & (upt[me] != uy)).sum()),
+                      "rejected": int((pt[me] < 0).sum())}
         id_rows[str(id_tasks[i])] = row
 
     ood_rows = {}
