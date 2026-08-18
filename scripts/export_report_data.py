@@ -70,18 +70,19 @@ def replay_main(cfg, rt, id_tasks, ood_tasks, rd):
         zt, pt, upt = zone[m], pred[m], up[m]
         uy = unit_of[i]
         # ok/bad 以 unit 級判定（表格藍格加總 = unit 級 acc 的設計不變量）
-        row = {"n": int(m.sum())}
+        row = {"n": int(m.sum()), "unit": int(uy)}
         for zk, zname in ((conformal.ZONE_FLOOR, "direct"),
                           (conformal.ZONE_GREEN, "green")):
             mm = zt == zk
-            row[zname] = {"ok": int((upt[mm] == uy).sum()),
-                          "bad": int((pt[mm] >= 0).sum()
-                                     - (upt[mm] == uy).sum())}
-        row["red"] = {"rej": int((zt == conformal.ZONE_RED).sum())}
+            row[zname] = {"routed_correct": int((upt[mm] == uy).sum()),
+                          "routed_wrong": int((pt[mm] >= 0).sum()
+                                              - (upt[mm] == uy).sum())}
+        row["red"] = {"rejected": int((zt == conformal.ZONE_RED).sum())}
         me = zt == conformal.ZONE_ESCALATE
-        row["esc"] = {"ok": int((upt[me] == uy).sum()),
-                      "bad": int(((pt[me] >= 0) & (upt[me] != uy)).sum()),
-                      "rej": int((pt[me] < 0).sum())}
+        row["esc"] = {"routed_correct": int((upt[me] == uy).sum()),
+                      "routed_wrong": int(((pt[me] >= 0)
+                                           & (upt[me] != uy)).sum()),
+                      "rejected": int((pt[me] < 0).sum())}
         id_rows[str(id_tasks[i])] = row
 
     ood_rows = {}
@@ -119,7 +120,11 @@ def main():
     missing = []
 
     out = {"generated": time.strftime("%Y-%m-%d %H:%M:%S"),
-           "n_id_tasks": len(id_tasks), "n_ood_tasks": len(ood_tasks)}
+           "n_id_tasks": len(id_tasks), "n_ood_tasks": len(ood_tasks),
+           # 路由單位表：unit 編號 → 成員任務號（task→unit 對應亦見
+           # main.id_rows[task]["unit"]）
+           "units": {str(u): [id_tasks[i] for i in g]
+                     for u, g in enumerate(rt.units)}}
 
     main_rep = load_result_json(rd)
     assert main_rep, "缺主評測結果——先跑 --mode run"
@@ -148,7 +153,8 @@ def main():
             "per_task_id": {t: {"acc_task": r["acc_task"],
                                 "acc_unit": r["acc_unit"]}
                             for t, r in rep["per_task_id"].items()},
-            "per_task_ood": {t: r["reject_rate"]
+            "per_task_ood": {t: {"reject_rate": r["reject_rate"],
+                                 "top_routes": r["top_routes"][:1]}
                              for t, r in rep["per_task_ood"].items()}}
 
     out["baselines"] = {}
@@ -165,7 +171,8 @@ def main():
             "per_task_id": {t: {"acc_task": r["acc_task"],
                                 "acc_unit": r["acc_unit"]}
                             for t, r in rep["per_task_id"].items()},
-            "per_task_ood": {t: r["reject_rate"]
+            "per_task_ood": {t: {"reject_rate": r["reject_rate"],
+                                 "top_routes": r["top_routes"][:1]}
                              for t, r in rep["per_task_ood"].items()}}
 
     out["missing"] = missing
