@@ -70,7 +70,7 @@ def replay_main(cfg, rt, id_tasks, ood_tasks, rd):
         zt, pt, upt = zone[m], pred[m], up[m]
         uy = unit_of[i]
         # ok/bad 以 unit 級判定（表格藍格加總 = unit 級 acc 的設計不變量）
-        row = {"n": int(m.sum())}
+        row = {"n": int(m.sum()), "unit": int(uy)}
         for zk, zname in ((conformal.ZONE_FLOOR, "direct"),
                           (conformal.ZONE_GREEN, "green")):
             mm = zt == zk
@@ -119,7 +119,11 @@ def main():
     missing = []
 
     out = {"generated": time.strftime("%Y-%m-%d %H:%M:%S"),
-           "n_id_tasks": len(id_tasks), "n_ood_tasks": len(ood_tasks)}
+           "n_id_tasks": len(id_tasks), "n_ood_tasks": len(ood_tasks),
+           # 路由單位表：unit 編號 → 成員任務號（task→unit 對應亦見
+           # main.id_rows[task]["unit"]）
+           "units": {str(u): [id_tasks[i] for i in g]
+                     for u, g in enumerate(rt.units)}}
 
     main_rep = load_result_json(rd)
     assert main_rep, "缺主評測結果——先跑 --mode run"
