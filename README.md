@@ -75,7 +75,7 @@ docs/                       架構圖與文件
  
 5. 批次執行
 ```bash
-   python main.py --mode batch          # --tasks a,b 限任務、--limit n 每個任務test set只取前n筆
+   python main.py --mode batch          # --tasks a,b 只跑任務a,b、--limit n 每個任務test set只取前n筆，這些沒加就是全跑
 ```
  
    逐筆結果（含 Router 診斷與模型輸出）落於
@@ -89,7 +89,7 @@ docs/                       架構圖與文件
 # 互動：單筆 query 跑完整流程，逐步顯示 Router 判定
 python main.py --mode interactive
 
-# 批次：跑 dataset 測試檔（--tasks 3,7 限任務、--limit 50 試跑）
+# 批次：跑 dataset 測試檔（--tasks 3,7 只跑任務3,7、--limit 50 只跑這些任務的前50筆）
 #       輸出 results/main_batch_outputs.jsonl（含逐筆診斷）
 python main.py --mode batch
 ```
