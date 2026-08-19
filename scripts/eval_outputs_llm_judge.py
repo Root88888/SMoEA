@@ -18,7 +18,7 @@ Adapter Merging 分支的輸出——該分支未實作時 output 為 null，
 
 【少量測試】（先跑 batch 產出結果檔，再評分）
   python main.py --mode batch --tasks 3,7 --limit 5
-  export OPENAI_API_KEY=你的 API KEY
+  export OPENAI_API_KEY=sk-...
   python scripts/eval_outputs_llm_judge.py --limit 5        # 每任務前 5 筆
   python scripts/eval_outputs_llm_judge.py --dry_run        # 不花錢：只驗資料對齊
 【全量】直接不帶 --limit / --tasks；--resume 斷點續評。
@@ -268,7 +268,7 @@ def main():
                     help="僅評這些來源任務，如 3,7（預設全部）")
     ap.add_argument("--limit", type=int, default=None,
                     help="每任務最多評幾筆（少量測試用）")
-    ap.add_argument("--model", default="gpt-5mini")
+    ap.add_argument("--model", default="gpt-5-mini")
     ap.add_argument("--api_key", default=None,
                     help="預設讀環境變數 OPENAI_API_KEY")
     ap.add_argument("--workers", type=int, default=8)
@@ -353,7 +353,7 @@ def main():
     flush()
     print(json.dumps(summarize(results, skipped)["overall"],
                      ensure_ascii=False, indent=1))
-    print(f"[done] → {args.out}（含時間戳副本）")
+    print(f"[done] → {args.out}")
 
 
 if __name__ == "__main__":
