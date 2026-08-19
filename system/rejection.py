@@ -1,38 +1,31 @@
 # -*- coding: utf-8 -*-
 """
-system/rejection.py — 拒絕分支（Rejection Runtime）的接入點
+system/rejection.py — Rejection Runtime 的唯一接入點
 
-主程式啟動時把 base model 載進 GPU、包成一個物件叫 engine；每次有 query 被拒絕，
-主程式就呼叫 handle_rejection(query, engine)，並把回傳的字串當作最終輸出
-（互動模式直接印出；批次模式寫入 results/main_batch_outputs.jsonl）。
-實作本函式即完成接入，不需改動其他任何檔案。
+Router 拒絕一筆請求後，互動模式與批次模式都經由本模組作答，不各自呼叫
+InferenceEngine——「Rejection Runtime 只有一條路徑」是本專案的不變式
+（見 CONTEXT.md）。
 
-輸入  query: str   查詢原文
-輸出  str          模型輸出文本
-
-
-engine 內部是 base model＋可切換的 task／merged updates 和 tokenizer。
-拒絕方法在啟動時由 system.rejection_method 明確指定及驗證；可使用 base、
-merged artifact、Direct Arrow 或 Taskwise-K16 Arrow。本模組不自行掃描 runs，
-也不在 query 時執行 merging／training。
-
-engine（system.inference.InferenceEngine，base model 已載妥）：
-  engine.ensure_rejection()
-      停用目前 task adapter，啟用啟動時已驗證的拒絕方法。
-  engine.generate([prompt, ...]) -> [output, ...]
-      使用完整且不含本題答案的 prompt 生成。
-
-adapter 權重檔請放在 adapter/{task_key}/（目錄內直接放 checkpoint，
-多個 checkpoint-*/ 自動取最新）。
-
-測試：python main.py --mode interactive 輸入應拒絕 OOD query 即觸發本函式；
-批次 python main.py --mode batch 後拒絕樣本的輸出在
-results/main_batch_outputs.jsonl。
+實際使用哪一種方法由 system.rejection_method 在啟動時明確指定並驗證：
+base、merged artifact、Direct Arrow 或 Taskwise-K16 Arrow。本模組不掃描
+runs、不自動挑選最新 run，也不在 query 時執行 merging 或 training。
 """
 
 
-def handle_rejection(query: str, engine) -> str:
-    """使用啟動時選定的拒絕方法回答完整且不含答案的題目。"""
+def run_rejection(engine, prompts, batch_size=1):
+    """啟用選定的 rejection method 並作答。
 
-    engine.ensure_rejection()
-    return engine.generate([query])[0]
+    engine     system.inference.InferenceEngine
+    prompts    完整且不含本題答案的請求全文清單
+    batch_size 生成批次大小（互動模式為 1）
+
+    回傳 (outputs, identity)：outputs 與 prompts 等長且同序；identity 為
+    本次採用方法的身分（method / condition_id / run_id / format），需寫入
+    批次輸出並在互動模式顯示，確保每筆答案都可追溯到來源 artifact。
+    """
+    identity = engine.ensure_rejection()
+    step = max(1, int(batch_size))
+    outputs = []
+    for start in range(0, len(prompts), step):
+        outputs.extend(engine.generate(prompts[start:start + step]))
+    return outputs, identity

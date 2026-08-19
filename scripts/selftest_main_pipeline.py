@@ -27,14 +27,20 @@ sys.path.insert(0, REPO)
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from selftest_end_to_end import make_synth, WORDS  # noqa: E402
+from system.merged_model import MergedModelError  # noqa: E402
 
 
 class StubEngine:
-    """記錄呼叫、回傳固定文本的假生成引擎。"""
+    """記錄呼叫、回傳固定文本的假生成引擎。
+
+    也模擬 registry 選擇（ADR-0001）：select_rejection 之後，ensure_rejection
+    必須回報被選中的那一個，批次輸出才追溯得到來源。
+    """
 
     def __init__(self, cfg):
         self.cfg = cfg["system"]
         self.switches = []
+        self.selected = None
 
     def load_base(self):
         pass
@@ -42,10 +48,29 @@ class StubEngine:
     def ensure_adapter(self, task_key):
         self.switches.append(task_key)
 
-    def ensure_rejection(self):
-        self.switches.append("rejection")
+    def available_rejections(self):
+        return ()
+
+    def current_rejection(self):
+        return {"id": self.selected or "(config)", **self.ensure_identity()}
+
+    def select_rejection(self, entry_id):
+        if entry_id != "ties":
+            raise MergedModelError(f"registry 沒有 id={entry_id!r} 的項目")
+        self.selected = entry_id
+        self.switches.append(f"select:{entry_id}")
+        return self.current_rejection()
+
+    def ensure_identity(self):
+        if self.selected == "ties":
+            return {"method": "artifact", "condition_id": "ties_only",
+                    "run_id": "stub-run", "format": "dense_delta_v1"}
         return {"method": "base", "condition_id": "base", "run_id": None,
                 "format": "base_model"}
+
+    def ensure_rejection(self):
+        self.switches.append("rejection")
+        return self.ensure_identity()
 
     def generate(self, prompts):
         return [f"[stub:{self.switches[-1]}] {p[:24]}" for p in prompts]
@@ -104,12 +129,33 @@ def main():
             assert d["zone"] in (2, 3)
         else:
             assert l["model_source"] == "task_adapter"
-            assert l["merged_condition_id"] is None
-            assert l["merged_run_id"] is None
+            assert l["rejection_condition_id"] is None
+            assert l["rejection_run_id"] is None
             assert l["output"].startswith(f"[stub:{l['routed_to']}]"), \
                 f"生成任務與路由不符：{l['routed_to']} vs {l['output'][:30]}"
     print(f"[MAIN-PASS] 批次 {len(lines)} 筆：路由 {n_route}／拒絕 {n_rej}"
           f"（rejection output 完整）；診斷鍵齊全；model source 與路由一致")
+
+    # ---- registry 選擇（ADR-0001）：整批指定同一個 artifact ----
+    M.run_batch(cfg, rt, tasks_arg=None, limit=None, artifact="ties")
+    lines = [json.loads(l) for l in open(out, encoding="utf-8")]
+    rejected = [l for l in lines if l["routed_to"] is None]
+    assert rejected, "合成資料沒有拒絕樣本，無法驗證 artifact 選擇"
+    for l in rejected:
+        assert l["rejection_condition_id"] == "ties_only", l["rejection_condition_id"]
+        assert l["rejection_run_id"] == "stub-run", l["rejection_run_id"]
+        assert l["rejection_method"] == "artifact", l["rejection_method"]
+    print(f"[SELECT-PASS] --artifact ties：{len(rejected)} 筆拒絕樣本"
+          f"全部記錄為 ties_only:stub-run")
+
+    # 選不存在的 id 必須失敗，而不是靜默退回 base
+    try:
+        M.run_batch(cfg, rt, tasks_arg=None, limit=None, artifact="不存在")
+    except MergedModelError:
+        print("[SELECT-PASS] 未知 id 正確被拒絕，未靜默退回 base")
+    else:
+        raise AssertionError("選了不存在的 id 卻沒有報錯")
+
     shutil.rmtree(root)
     print("ALL PASS（合成環境已清理）")
 

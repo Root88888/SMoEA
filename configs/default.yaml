@@ -7,7 +7,6 @@ paths:
   dataset_dir: dataset            # 之下需有 train_data/ 與 test_data/
   assets_dir: assets              # build_router_assets 的輸出（嵌入快取、指紋、校準庫）
   results_dir: results            # 評測輸出 json
-  adapter_dir: adapter            # LoRA adapters（router 本身不讀，供下游載入）
 
 data:
   field: input                    # 上游相容欄位；routing_text=input 時使用
@@ -55,14 +54,16 @@ evaluation:
 system:                           # 主程式（main.py）：路由後的生成執行層
   base_model: unsloth/Meta-Llama-3.1-8B
   adapter_dir: adapter            # adapter/task{N}/（直含 adapter 檔或 checkpoint-*/ 取最新）
-  rejection_method: null          # null 預設 base；舊 merged_model_dir 有值時相容為 artifact
+  rejection_method: null          # null 預設 base；
                                   # 也可明定 base | artifact | arrow | taskwise_k16_arrow
   rejection_artifact_dir: null    # artifact: prepare/merged_model 完整目錄
   rejection_router_dir: null      # Arrow: moea-repro 的 prepare/；Direct Arrow 可 null 現算
   rejection_adapter_manifest: null # Direct Arrow: 依序列出 150 adapters 的 manifest.json
   rejection_adapter_root: null    # manifest 相對 path 的根目錄；null 表示 manifest 所在目錄
-  merged_model_dir: null          # 舊設定相容；新部署請用 rejection_artifact_dir
-  merged_model_required: false    # 舊設定相容；新部署由 rejection_method=artifact 驗證
+  artifact_registry: null         # 可選 rejection artifact 的宣告清單（registry.json）；
+                                  # 互動 :artifact use <id> 與批次 --artifact <id> 只認這裡列出的項目
+  artifact_root: null             # 線上 merge 產物的落地根目錄（repo 之外的掛載路徑）；
+                                  # 結構 <artifact_root>/<condition>/<run_id>/prepare/merged_model/
   load_in_4bit: false             # 生成模型量化；須與 MoEA-Trainer 訓練側載入設定一致
   dtype: float16
   max_input_tokens: 4096          # prompt 截斷長度（左 padding）

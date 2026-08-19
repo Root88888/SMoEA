@@ -15,7 +15,7 @@ system.rejection_method 明確指定的 base、artifact 或 Arrow runtime。
     off            不載裁決，送審一律拒絕（fail-closed）
 
 【批次模式】跑 dataset 測試檔全部（或指定任務），逐筆路由＋生成：
-  python main.py --mode batch [--tasks 3,7,10] [--limit 50]
+  python main.py --mode batch [--tasks 3,7,10] [--limit 50] [--artifact <id>]
   → results/main_batch_outputs.jsonl（每行：instance_id / query /
     router 診斷 / 去向 / 實際 model source / 模型輸出）
   流程分三段執行以省模型切換：全量分區 → 送審打分 → 按任務分組生成。
@@ -39,6 +39,7 @@ from router.config import config_from_cli, discover_tasks  # noqa: E402
 from router.core import Router  # noqa: E402
 from system.inference import InferenceEngine  # noqa: E402
 from system.merged_model import MergedModelError  # noqa: E402
+from system.rejection import run_rejection  # noqa: E402
 
 ZONE_LABEL = {0: "直判路由 (margin>floor)", 1: "綠區路由",
               2: "送審", 3: "紅區拒絕"}
@@ -130,6 +131,40 @@ def print_diagnosis(d):
 # ---------------------------------------------------------------------------
 # 互動模式
 # ---------------------------------------------------------------------------
+def handle_rejection_command(engine, argument):
+    """處理 `:rejection` 系列指令；印出結果，不回傳查詢。"""
+    entries = engine.available_rejections()
+    if argument in ("", "show"):
+        current = engine.current_rejection()
+        print(f"[Rejection] 目前：{current['id']} "
+              f"（{current['condition_id']}"
+              + (f":{current['run_id']}" if current["run_id"] else "") + "）")
+        return
+    if argument == "list":
+        if not entries:
+            print("[Rejection] 未設定 system.artifact_registry，無可選項目")
+            return
+        current_id = engine.current_rejection()["id"]
+        for entry in entries:
+            mark = "*" if entry.id == current_id else " "
+            print(f" {mark} {entry.summary()}")
+        return
+    if argument.startswith("use "):
+        wanted = argument[4:].strip()
+        try:
+            current = engine.select_rejection(wanted)
+        except MergedModelError as exc:
+            # 驗證失敗不換：目前生效的 artifact 原封不動。
+            print(f"[Rejection] 切換失敗，維持 "
+                  f"{engine.current_rejection()['id']}：{exc}")
+            return
+        print(f"[Rejection] 已切換到 {current['id']} "
+              f"（{current['condition_id']}"
+              + (f":{current['run_id']}" if current["run_id"] else "") + "）")
+        return
+    print("[Rejection] 用法：:rejection  |  :rejection list  |  :rejection use <id>")
+
+
 def read_interactive_request():
     """讀一筆互動請求；`:paste` 可收集多行，直到單獨一行 `:send`。"""
     try:
@@ -138,6 +173,8 @@ def read_interactive_request():
         return None
     if first.lower() in ("exit", "quit"):
         return None
+    if first.startswith(":rejection"):
+        return (":rejection", first[len(":rejection"):].strip())
     if first != ":paste":
         return first
 
@@ -178,10 +215,15 @@ def run_interactive(cfg, rt, preload=True):
     print("\n===== SMoEA 互動模式 =====")
     print("單行請求可直接輸入；多行請求先輸入 :paste，貼完以 :send 送出；"
           "exit 離開")
+    print(f"拒絕分支目前使用 {engine.current_rejection()['id']}；"
+          ":rejection list 看可選項目、:rejection use <id> 切換")
     while True:
         q = read_interactive_request()
         if q is None:
             break
+        if isinstance(q, tuple):
+            handle_rejection_command(engine, q[1])
+            continue
         if not q:
             continue
         dec = rt.decide([q])
@@ -210,9 +252,10 @@ def run_interactive(cfg, rt, preload=True):
             print(f"[Router] 判定：{ZONE_LABEL[z] if z != 2 else '送審→拒絕'}"
                   f" → 進入 rejection inference 分支")
             try:
-                from system.rejection import handle_rejection
-                out = handle_rejection(q, engine)
-                print(f"[Output]\n{out}")
+                outs, info = run_rejection(engine, [q])
+                print(f"[Rejection] {info['condition_id']}"
+                      + (f":{info['run_id']}" if info["run_id"] else ""))
+                print(f"[Output]\n{outs[0]}")
             except MergedModelError as e:
                 print(f"[System] {e}")
 
@@ -220,7 +263,7 @@ def run_interactive(cfg, rt, preload=True):
 # ---------------------------------------------------------------------------
 # 批次模式
 # ---------------------------------------------------------------------------
-def run_batch(cfg, rt, tasks_arg, limit):
+def run_batch(cfg, rt, tasks_arg, limit, artifact=None):
     id_tasks, ood_tasks = discover_tasks(cfg)
     wanted = ([int(x) for x in tasks_arg.split(",")]
               if tasks_arg else id_tasks + ood_tasks)
@@ -259,6 +302,12 @@ def run_batch(cfg, rt, tasks_arg, limit):
     assert miss == 0
 
     engine = InferenceEngine(cfg)
+    if artifact is not None:
+        # 整批共用同一個 artifact（ADR-0001）：先確定選得到，再開始生成。
+        current = engine.select_rejection(artifact)
+        print(f"[batch] 拒絕分支使用 {current['id']}"
+              f"（{current['condition_id']}"
+              + (f":{current['run_id']}" if current["run_id"] else "") + "）")
     outputs = [None] * len(rows)
     routed = {}
     for i, p in enumerate(pred):
@@ -277,12 +326,10 @@ def run_batch(cfg, rt, tasks_arg, limit):
     rejected = [i for i, p in enumerate(pred) if p < 0]
     rejection_info = None
     if rejected:
-        rejection_info = engine.ensure_rejection()
-        for s in range(0, len(rejected), bs):
-            chunk = rejected[s:s + bs]
-            outs = engine.generate([rows[i][3] for i in chunk])
-            for i, o in zip(chunk, outs):
-                outputs[i] = o
+        outs, rejection_info = run_rejection(
+            engine, [rows[i][3] for i in rejected], batch_size=bs)
+        for i, o in zip(rejected, outs):
+            outputs[i] = o
         print(f"[batch] rejection method "
               f"{rejection_info['condition_id']}:{rejection_info['run_id']}: "
               f"{len(rejected)} 筆生成完")
@@ -311,15 +358,6 @@ def run_batch(cfg, rt, tasks_arg, limit):
                                              if uses_rejection else None),
                  "rejection_run_id": (rejection_info["run_id"]
                                       if uses_rejection else None),
-                 # Retain legacy fields for downstream readers of older output.
-                 "merged_condition_id": (
-                     rejection_info["condition_id"]
-                     if uses_rejection and rejection_info["method"] == "artifact"
-                     else None),
-                 "merged_run_id": (
-                     rejection_info["run_id"]
-                     if uses_rejection and rejection_info["method"] == "artifact"
-                     else None),
                  "output": outputs[i]},
                 ensure_ascii=False) + "\n")
     import shutil
@@ -338,6 +376,9 @@ def main():
                        help="批次模式限定任務，如 3,7,10；預設全部"),
         p.add_argument("--limit", type=int, default=None,
                        help="批次模式每任務最多筆數（試跑用）"),
+        p.add_argument("--artifact", default=None,
+                       help="批次模式的拒絕 artifact；值為 "
+                            "system.artifact_registry 中宣告的 id，整批共用"),
         p.add_argument("--no_preload", action="store_true",
                        help="互動模式延後到第一筆需要時才載入模型")))
     rt = Router.load(cfg)
@@ -346,7 +387,7 @@ def main():
     if args.mode == "interactive":
         run_interactive(cfg, rt, preload=not args.no_preload)
     else:
-        run_batch(cfg, rt, args.tasks, args.limit)
+        run_batch(cfg, rt, args.tasks, args.limit, args.artifact)
 
 
 if __name__ == "__main__":
