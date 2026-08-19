@@ -95,26 +95,38 @@ docs/                       架構圖與文件
  
 之後每次開機僅需 `conda activate smoea`；步驟 2、3 為一次性作業。
 
-## 使用
+## 批次推論結果評測 LLM-as-a-judge
+
+對批次推論的輸出以 OpenAI 模型閱卷：每筆將題目、標準答案、模型輸出
+交給 LLM 評分——score 0–5（5=完全正確）、score≥4 計為正確
+（is_correct），並附簡短評語。需自備 OpenAI API key。
+
+要先產生批次推論結果 results/main_batch_outputs.jsonl or results/main_batch_outputs_{時間戳}.jsonl
 
 ```bash
-# 互動：單筆 query 跑完整流程，逐步顯示 Router 判定
-python main.py --mode interactive
+# key 僅存在當前終端機，不要寫進任何檔案
+export OPENAI_API_KEY=你的OPENAI_API_KEY
 
-# 批次：跑 dataset 測試檔（--tasks 3,7 只跑任務3,7、--limit 50 只跑這些任務的前50筆）
-#       輸出 results/main_batch_outputs.jsonl（含逐筆診斷）
-python main.py --mode batch
+# 評測最新的 batch_output 檔
+python scripts/eval_outputs_llm_judge.py
+
+or
+# 評測某個歷史 batch_output 檔
+python scripts/eval_outputs_llm_judge.py --batch results/main_batch_outputs_{時間戳}.jsonl
 ```
 
-互動模式輸出範例：
+選用參數，可組合：
 
-```
-> <query>
-[Router] margin=0.183  p=0.42  詞彙一致✓
-[Router] top-3：task23(sim 0.87)  task10(sim 0.71)  task24(sim 0.66)
-[Router] 判定：綠區路由 → task23
-[Output] <模型輸出>
-```
+- `--tasks 3,7`　只評這些來源任務（預設全部）
+- `--limit 5`　每任務最多評幾筆（少量測試用）
+- `--batch results/main_batch_outputs_{時間戳}.jsonl`
+  指定評哪份推論結果（預設評主檔 `results/main_batch_outputs.jsonl`）
+- `--model gpt-5-mini`　Judge 模型（預設 gpt-5-mini）
+- `--resume`　斷點續評（跳過已成功評分的樣本）
+- `--workers 8`　併發請求數
+
+輸出 `results/llm_judge_{時間戳}.json`，時間戳繼承所評 batch 檔的
+產出時間。
 
 ## 從哪裡下手
 
