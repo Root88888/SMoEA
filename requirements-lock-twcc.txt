@@ -15,3 +15,4 @@ transformers==4.46.3
 accelerate==1.1.1
 peft==0.14.0
 bitsandbytes==0.49.2   # 0.4x 早期版在 py3.12 依賴已移除的 distutils；本版需 torch>=2.2（本檔 torch 2.4.1 滿足）
+openai==3.3.0
