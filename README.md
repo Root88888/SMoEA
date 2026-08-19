@@ -136,9 +136,4 @@ python scripts/eval_outputs_llm_judge.py --batch results/main_batch_outputs_{時
 - **新增任務**：樣本放 `dataset/`、adapter 放 `adapter/task{N}/`、
   重跑 `build_router_assets.py` 即完成擴充（送審裁決另需在
   `assets/unit_descriptions.json` 補該任務所屬單位的說明）。
-
-## 資料格式
-
-樣本檔 `{"task_key", "task_name", "definition", "instances": [...]}`，
-每筆 instance 含 `input`（路由用）、`full_prompt`（生成 prompt）、
-`output`、`instance_id`；亦相容純 array 與 JSONL。
+  
