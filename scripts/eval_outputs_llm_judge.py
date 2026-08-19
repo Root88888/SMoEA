@@ -27,10 +27,10 @@ Adapter Merging 分支的輸出——該分支未實作時 output 為 null，
 
 import argparse
 import glob
+import hashlib
 import json
 import os
 import re
-import shutil
 import time
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -274,13 +274,24 @@ def main():
     ap.add_argument("--workers", type=int, default=8)
     ap.add_argument("--max_retries", type=int, default=3)
     ap.add_argument("--max_output_tokens", type=int, default=512)
-    ap.add_argument("--out", default="results/llm_judge_results.json")
+    ap.add_argument("--out", default=None,
+                    help="預設 results/llm_judge_{batch時間戳}.json——"
+                         "檔名繼承所評 batch 檔的時間身分，與其時間戳副本"
+                         "一眼配對；同一份 batch 重評落同一檔名")
     ap.add_argument("--resume", action="store_true",
                     help="跳過輸出檔中已成功評分的樣本")
     ap.add_argument("--dry_run", action="store_true",
                     help="不呼叫 API：只驗資料對齊並印統計骨架")
     ap.add_argument("--save_every", type=int, default=20)
     args = ap.parse_args()
+
+    if args.out is None:
+        m = re.search(r"(\d{8}_\d{6})", os.path.basename(args.batch))
+        ts = m.group(1) if m else time.strftime(
+            "%Y%m%d_%H%M%S", time.localtime(os.path.getmtime(args.batch)))
+        args.out = os.path.join(os.path.dirname(args.batch) or ".",
+                                f"llm_judge_{ts}.json")
+    print(f"[judge] 評分對象 {args.batch} → 輸出 {args.out}")
 
     items, skipped = build_items(args.batch, args.dataset_dir,
                                  args.tasks, args.limit)
@@ -314,7 +325,9 @@ def main():
     results = list(done.values())
 
     def flush():
-        payload = {"batch": args.batch, "model": args.model,
+        h = hashlib.md5(open(args.batch, "rb").read()).hexdigest()[:12]
+        payload = {"batch": args.batch, "batch_md5": h,
+                   "model": args.model,
                    "generated": time.strftime("%Y-%m-%d %H:%M:%S"),
                    "summary": summarize(results, skipped),
                    "skipped": skipped,
@@ -338,8 +351,6 @@ def main():
             if i % 20 == 0 or i == len(futs):
                 print(f"  進度 {i}/{len(futs)}")
     flush()
-    shutil.copy(args.out, args.out.replace(
-        ".json", f"_{time.strftime('%Y%m%d_%H%M%S')}.json"))
     print(json.dumps(summarize(results, skipped)["overall"],
                      ensure_ascii=False, indent=1))
     print(f"[done] → {args.out}（含時間戳副本）")
