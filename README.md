@@ -110,7 +110,6 @@ export OPENAI_API_KEY=你的OPENAI_API_KEY
 # 評測最新的 batch_output 檔
 python scripts/eval_outputs_llm_judge.py
 
-or
 # 評測某個歷史 batch_output 檔
 python scripts/eval_outputs_llm_judge.py --batch results/main_batch_outputs_{時間戳}.jsonl
 ```
