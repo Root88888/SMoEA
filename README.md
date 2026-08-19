@@ -42,7 +42,7 @@ docs/                       架構圖與文件
    git clone https://github.com/Root88888/SMoEA.git && cd SMoEA
 ```
  
-2. 放置檔案（手動步驟）
+2. 放置檔案
    - 任務樣本：train 檔放 `dataset/train_data/`、test 檔放
      `dataset/test_data/`（檔名 `task{N}_train.json` / `task{N}_test.json`）
      ```bash
