@@ -95,6 +95,56 @@ docs/                       架構圖與文件
  
 之後每次開機僅需 `conda activate smoea`；步驟 2、3 為一次性作業。
 
+## 重現路由結果 Router Acc/Ablation/Baseline Comparison
+
+### 1. 主評測＋獨立驗證
+
+```bash
+# 1a. 分區（CPU 數分鐘）：全部測試樣本分四區、產送審佇列
+python scripts/eval_router.py --mode decide 2>&1 | tee results/eval_decide.txt
+
+# 1b. 送審打分（GPU 數小時；中斷重跑自動續）：裁決 LLM 對佇列逐筆三題是非
+python scripts/eval_router.py --mode score 2>&1 | tee results/eval_score.txt
+
+# 1c. 結算（不帶 OOD 標記＝無標記模式）
+python scripts/eval_router.py --mode run 2>&1 | tee results/eval_run.txt
+
+# 1d. 交叉驗證：獨立重放逐格比對六流向
+python scripts/verify_flow_table.py
+```
+
+### 2. Ablation 變體資產（無多質心版；一次性）
+
+```bash
+mkdir -p assets_ablate_nomc
+cp assets/emb_*.npz assets/unit_descriptions.json assets_ablate_nomc/
+python scripts/build_router_assets.py \
+    --set paths.assets_dir=assets_ablate_nomc --set fingerprint.k_max=1
+```
+
+### 3. 五個 Ablation 變體
+
+```bash
+for AB in gray_reject gray_route no_lexical no_direct no_multicentroid; do
+  python scripts/eval_router.py --mode decide --ablate $AB
+  python scripts/eval_router.py --mode score  --ablate $AB
+  python scripts/eval_router.py --mode run    --ablate $AB
+done
+```
+
+### 4. 兩支 Baseline
+
+```bash
+python scripts/eval_baseline_mean_embedding.py --mode eval --tau 0.72
+python scripts/eval_baseline_bm25_voting.py    --mode eval --ratio_tau 0.5
+```
+
+### 5. 匯總數據
+
+```bash
+python scripts/export_report_data.py        # 輸出 results/report_data.json
+```
+
 ## 批次推論結果評測 (LLM-as-a-judge)
 
 對批次推論的輸出以 OpenAI 模型閱卷：每筆將題目、標準答案、模型輸出
