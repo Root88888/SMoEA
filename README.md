@@ -45,6 +45,18 @@ docs/                       架構圖與文件
 2. 放置檔案（手動步驟）
    - 任務樣本：train 檔放 `dataset/train_data/`、test 檔放
      `dataset/test_data/`（檔名 `task{N}_train.json` / `task{N}_test.json`）
+     ```bash
+        cd ./
+        pip install gdown
+        
+        mkdir -p dataset/train_data dataset/test_data
+        
+        gdown 1AsJwaqQ3AXmPT8TpAxOyvCPbyHtCi1lG -O dataset/train_data/train_data.zip
+        gdown 1aiT9r9v2tyH-0cdf_F6zhfEvYF0mZ2tM -O dataset/test_data/test_data.zip
+        
+        python3 -m zipfile -e dataset/train_data/train_data.zip dataset/train_data/
+        python3 -m zipfile -e dataset/test_data/test_data.zip  dataset/test_data/
+     ```
    - adapters：每任務一個目錄，放成 `adapter/task{N}/`；解壓後若外層
      多包一層目錄，將其中的 `task*` 移出攤平
 
