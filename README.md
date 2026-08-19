@@ -95,7 +95,7 @@ docs/                       架構圖與文件
  
 之後每次開機僅需 `conda activate smoea`；步驟 2、3 為一次性作業。
 
-## 批次推論結果評測 LLM-as-a-judge
+## 批次推論結果評測 (LLM-as-a-judge)
 
 對批次推論的輸出以 OpenAI 模型閱卷：每筆將題目、標準答案、模型輸出
 交給 LLM 評分——score 0–5（5=完全正確）、score≥4 計為正確
