@@ -57,6 +57,19 @@ docs/                       架構圖與文件
      `task{N}_train.json`。互動與線上服務建置只需要這一份資料
    - 批次評測資料：要跑 benchmark 時才放到 `dataset/test_data/`，檔名
      `task{N}_test.json`
+
+     上游資料可用以下指令下載；只跑互動／線上服務時可略過 test data：
+
+     ```bash
+     pip install gdown
+     mkdir -p dataset/train_data dataset/test_data
+
+     gdown 1AsJwaqQ3AXmPT8TpAxOyvCPbyHtCi1lG -O dataset/train_data/train_data.zip
+     gdown 1aiT9r9v2tyH-0cdf_F6zhfEvYF0mZ2tM -O dataset/test_data/test_data.zip
+
+     python3 -m zipfile -e dataset/train_data/train_data.zip dataset/train_data/
+     python3 -m zipfile -e dataset/test_data/test_data.zip dataset/test_data/
+     ```
    - adapters：每任務一個目錄，放成 `adapter/task{N}/`；解壓後若外層
      多包一層目錄，將其中的 `task*` 移出攤平
    - OOD Natural Instructions `task149`：保留原始檔名，放到
@@ -112,7 +125,7 @@ docs/                       架構圖與文件
    仍可正常使用，但不要把部分 test data 的結果當成完整 benchmark。
 
 ```bash
-   python main.py --mode batch          # --tasks a,b 限任務、--limit n 每個任務test set只取前n筆
+   python main.py --mode batch          # --tasks a,b 只跑任務a,b、--limit n 每個任務test set只取前n筆，這些沒加就是全跑
 ```
  
    路由命中使用 task adapter；router 拒絕則按 batch 集中使用 selected rejection
@@ -122,26 +135,97 @@ docs/                       架構圖與文件
  
 之後每次開機僅需 `conda activate smoea`；步驟 2、3 為一次性作業。
 
-## 使用
-
-```bash
-# 互動：單筆完整請求跑完整流程，逐步顯示 Router 判定
-python main.py --mode interactive
-
-# 批次：跑 dataset 測試檔（--tasks 3,7 限任務、--limit 50 試跑）
-#       輸出 results/main_batch_outputs.jsonl（含逐筆診斷）
-python main.py --mode batch
-```
-
 互動模式輸出範例：
 
-```
+```text
 > <完整任務要求與內容，不含答案>
 [Router] margin=0.183  p=0.42  詞彙一致✓
 [Router] top-3：task23(sim 0.87)  task10(sim 0.71)  task24(sim 0.66)
 [Router] 判定：綠區路由 → task23
 [Output] <模型輸出>
 ```
+
+## 重現路由結果 Routing Zone Outcome and Accuracy/Ablation/Baseline Comparison
+
+### 1. 主評測
+
+```bash
+# 1a. 分區（CPU 數分鐘）：全部測試樣本分四區、產送審佇列
+python scripts/eval_router.py --mode decide 2>&1 | tee results/eval_decide.txt
+
+# 1b. 送審打分（GPU 數小時；中斷重跑自動續）：裁決 LLM 對佇列逐筆三題是非
+python scripts/eval_router.py --mode score 2>&1 | tee results/eval_score.txt
+
+# 1c. 結算
+python scripts/eval_router.py --mode run 2>&1 | tee results/eval_run.txt
+```
+
+### 2. Ablation 變體資產準備（無多質心版；一次性）
+
+```bash
+mkdir -p assets_ablate_nomc
+cp assets/emb_*.npz assets/unit_descriptions.json assets_ablate_nomc/
+python scripts/build_router_assets.py \
+    --set paths.assets_dir=assets_ablate_nomc --set fingerprint.k_max=1
+```
+
+### 3. 五個 Ablation 變體
+
+```bash
+for AB in gray_reject gray_route no_lexical no_direct no_multicentroid; do
+  python scripts/eval_router.py --mode decide --ablate $AB
+  python scripts/eval_router.py --mode score  --ablate $AB
+  python scripts/eval_router.py --mode run    --ablate $AB
+done
+```
+
+### 4. 兩支 Baseline
+
+```bash
+python scripts/eval_baseline_mean_embedding.py --mode eval --tau 0.72
+python scripts/eval_baseline_bm25_voting.py    --mode eval --ratio_tau 0.5
+```
+
+### 5. 匯總數據
+
+```bash
+python scripts/export_report_data.py        # 輸出 results/report_data.json
+```
+
+## 批次推論結果評測 (LLM-as-a-judge)
+
+對批次推論的輸出以 OpenAI 模型閱卷：每筆將題目、標準答案、模型輸出
+交給 LLM 評分——score 0–5（5=完全正確）、score≥4 計為正確
+（is_correct），並附簡短評語。需自備 OpenAI API key。
+
+要先產生批次推論結果 results/main_batch_outputs.jsonl or results/main_batch_outputs_{時間戳}.jsonl
+
+```bash
+# key 僅存在當前終端機，不要寫進任何檔案
+export OPENAI_API_KEY=你的OPENAI_API_KEY
+
+# 評測最新的 batch_output 檔
+python scripts/eval_outputs_llm_judge.py
+
+# 評測某個歷史 batch_output 檔
+python scripts/eval_outputs_llm_judge.py --batch results/main_batch_outputs_{時間戳}.jsonl
+```
+
+選用參數，可組合：
+
+- `--tasks 3,7`　只評這些來源任務（預設全部）
+- `--limit 5`　每任務最多評幾筆（少量測試用）
+- `--batch results/main_batch_outputs_{時間戳}.jsonl`
+  指定評哪份推論結果（預設評主檔 `results/main_batch_outputs.jsonl`）
+- `--model gpt-5-mini`　Judge 模型（預設 gpt-5-mini）
+- `--resume`　斷點續評（跳過已成功評分的樣本）
+- `--workers 8`　併發請求數
+- `--ood_dataset_dir dataset/ood_test_data`　OOD 標準答案目錄
+
+輸出 `results/llm_judge_{時間戳}.json`，時間戳繼承所評 batch 檔的產出時間。
+`per_path` 會把 routed 與各 rejection method（base、artifact、Arrow、
+Taskwise-K16）分開統計；這支 script 評的是完整 `main.py --mode batch`
+輸出，和只測 rejection condition 的 `run_rejection_benchmark.py` 用途不同。
 
 ## 從哪裡下手
 
