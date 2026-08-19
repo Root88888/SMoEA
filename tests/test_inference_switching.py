@@ -1,5 +1,6 @@
 import unittest
 from types import SimpleNamespace
+from unittest.mock import patch
 
 from system.inference import InferenceEngine
 from system.merged_model import MergedModelError
@@ -37,7 +38,43 @@ class FakeDenseController:
         self.events.append("dense:disable")
 
 
+class FakeArrowController:
+    def __init__(self, events):
+        self.events = events
+
+    def attach(self, model):
+        self.events.append("arrow:attach")
+
+    def enable(self):
+        self.events.append("arrow:enable")
+
+    def disable(self):
+        self.events.append("arrow:disable")
+
+
 class InferenceSwitchingTests(unittest.TestCase):
+    @patch("system.inference.validate_inference_config")
+    @patch("system.inference.validate_base_model_config")
+    @patch("system.inference.load_merged_model_artifact")
+    def test_legacy_merged_model_dir_still_selects_artifact(
+        self, load_artifact, _validate_base, _validate_inference
+    ):
+        load_artifact.return_value = SimpleNamespace(base_model_revision="local")
+        cfg = {
+            "system": {
+                "base_model": "base",
+                "adapter_dir": "adapter",
+                "merged_model_dir": "/legacy/merged_model",
+            }
+        }
+
+        engine = InferenceEngine(cfg)
+
+        self.assertEqual(engine._rejection_method, "artifact")
+        load_artifact.assert_called_once_with(
+            "/legacy/merged_model", expected_base_model="base"
+        )
+
     def test_selected_artifact_revision_is_used_for_base_loading(self):
         cfg = {
             "system": {
@@ -107,6 +144,53 @@ class InferenceSwitchingTests(unittest.TestCase):
             ],
         )
         self.assertEqual(engine._active, "task1")
+
+    def test_base_rejection_disables_task_and_dense_updates(self):
+        cfg = {
+            "system": {
+                "base_model": "base",
+                "adapter_dir": "adapter",
+                "rejection_method": "base",
+            }
+        }
+        events = []
+        engine = InferenceEngine(cfg)
+        engine.model = FakePeftModel(events)
+        engine.tokenizer = object()
+        engine._dense_controller = FakeDenseController(events)
+
+        info = engine.ensure_rejection()
+
+        self.assertEqual(info["condition_id"], "base")
+        self.assertEqual(events, ["dense:disable", "peft:disable"])
+        self.assertIsNone(engine._active)
+
+    def test_arrow_rejection_disables_other_updates_before_enabling_arrow(self):
+        cfg = {
+            "system": {
+                "base_model": "base",
+                "adapter_dir": "adapter",
+                "rejection_method": "base",
+            }
+        }
+        events = []
+        engine = InferenceEngine(cfg)
+        engine.model = FakePeftModel(events)
+        engine.tokenizer = object()
+        engine._dense_controller = FakeDenseController(events)
+        engine._arrow_artifact = SimpleNamespace(
+            condition_id="arrow", run_id="run-1", adapter_paths=("a", "b")
+        )
+        engine._arrow_controller = FakeArrowController(events)
+        engine._rejection_method = "arrow"
+
+        info = engine.ensure_rejection()
+
+        self.assertEqual(info["condition_id"], "arrow")
+        self.assertEqual(
+            events,
+            ["dense:disable", "peft:disable", "arrow:attach", "arrow:enable"],
+        )
 
 
 if __name__ == "__main__":

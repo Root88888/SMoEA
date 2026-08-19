@@ -5,7 +5,7 @@ main.py — SMoEA 主程式：query → Router → adapter → inference → out
 
 架構圖對應：Router 分流之後，路由樣本
 由 system/InferenceEngine 載對應任務 adapter 生成；拒絕樣本使用
-system.merged_model_dir 明確指定的 Merged Inference Artifact。
+system.rejection_method 明確指定的 base、artifact 或 Arrow runtime。
 
 【互動模式】單筆 query 跑完整流程並顯示 router 逐步判定：
   python main.py --mode interactive
@@ -208,7 +208,7 @@ def run_interactive(cfg, rt, preload=True):
         else:
             d["zone"] = "red" if z == conformal.ZONE_RED else "esc_rej"
             print(f"[Router] 判定：{ZONE_LABEL[z] if z != 2 else '送審→拒絕'}"
-                  f" → 進入 Adapter Merging 分支")
+                  f" → 進入 rejection inference 分支")
             try:
                 from system.rejection import handle_rejection
                 out = handle_rejection(q, engine)
@@ -275,16 +275,16 @@ def run_batch(cfg, rt, tasks_arg, limit):
         print(f"[batch] {task_key}: {len(idxs)} 筆生成完")
 
     rejected = [i for i, p in enumerate(pred) if p < 0]
-    merged_info = None
+    rejection_info = None
     if rejected:
-        merged_info = engine.ensure_merged()
+        rejection_info = engine.ensure_rejection()
         for s in range(0, len(rejected), bs):
             chunk = rejected[s:s + bs]
             outs = engine.generate([rows[i][3] for i in chunk])
             for i, o in zip(chunk, outs):
                 outputs[i] = o
-        print(f"[batch] merged model "
-              f"{merged_info['condition_id']}:{merged_info['run_id']}: "
+        print(f"[batch] rejection method "
+              f"{rejection_info['condition_id']}:{rejection_info['run_id']}: "
               f"{len(rejected)} 筆生成完")
 
     rd = cfg["paths"]["results_dir"]
@@ -297,25 +297,36 @@ def run_batch(cfg, rt, tasks_arg, limit):
             p = int(pred[i])
             if p < 0:
                 n_rej += 1
-            uses_merged = p < 0
+            uses_rejection = p < 0
             f.write(json.dumps(
                 {"source_task": external_task_key(t), "instance_id": iid,
                  "internal_task_id": (f"task{t}" if t == 9149 else None),
                  "routed_to": (f"task{rt.id_tasks[p]}" if p >= 0 else None),
                  "diagnosis": d,
-                 "model_source": ("merged_model" if uses_merged
+                 "model_source": ("rejection" if uses_rejection
                                   else "task_adapter"),
-                 "merged_condition_id": (merged_info["condition_id"]
-                                         if uses_merged else None),
-                 "merged_run_id": (merged_info["run_id"]
-                                   if uses_merged else None),
+                 "rejection_method": (rejection_info["method"]
+                                      if uses_rejection else None),
+                 "rejection_condition_id": (rejection_info["condition_id"]
+                                             if uses_rejection else None),
+                 "rejection_run_id": (rejection_info["run_id"]
+                                      if uses_rejection else None),
+                 # Retain legacy fields for downstream readers of older output.
+                 "merged_condition_id": (
+                     rejection_info["condition_id"]
+                     if uses_rejection and rejection_info["method"] == "artifact"
+                     else None),
+                 "merged_run_id": (
+                     rejection_info["run_id"]
+                     if uses_rejection and rejection_info["method"] == "artifact"
+                     else None),
                  "output": outputs[i]},
                 ensure_ascii=False) + "\n")
     import shutil
     ts = time.strftime("%Y%m%d_%H%M%S")
     shutil.copy(out_path, out_path.replace(".jsonl", f"_{ts}.jsonl"))
     print(f"[batch] task adapter 生成 {len(rows)-n_rej} 筆、"
-          f"merged model 生成 {n_rej} 筆")
+          f"rejection method 生成 {n_rej} 筆")
     print(f"[done] → {out_path}（含時間戳副本）")
 
 

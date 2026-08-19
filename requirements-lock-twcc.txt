@@ -10,6 +10,8 @@ scipy==1.17.1
 scikit-learn==1.8.0
 PyYAML==6.0.2
 matplotlib==3.9.2
+rouge-score==0.1.2
+nltk==3.9.1
 sentence-transformers==3.2.1
 transformers==4.46.3
 accelerate==1.1.1

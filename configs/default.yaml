@@ -55,8 +55,14 @@ evaluation:
 system:                           # 主程式（main.py）：路由後的生成執行層
   base_model: unsloth/Meta-Llama-3.1-8B
   adapter_dir: adapter            # adapter/task{N}/（直含 adapter 檔或 checkpoint-*/ 取最新）
-  merged_model_dir: null          # 明確指定 delivery 的 prepare/merged_model；null 僅供開發
-  merged_model_required: false    # production 設 true；未指定 artifact 時啟動即失敗
+  rejection_method: null          # null 預設 base；舊 merged_model_dir 有值時相容為 artifact
+                                  # 也可明定 base | artifact | arrow | taskwise_k16_arrow
+  rejection_artifact_dir: null    # artifact: prepare/merged_model 完整目錄
+  rejection_router_dir: null      # Arrow: moea-repro 的 prepare/；Direct Arrow 可 null 現算
+  rejection_adapter_manifest: null # Direct Arrow: 依序列出 150 adapters 的 manifest.json
+  rejection_adapter_root: null    # manifest 相對 path 的根目錄；null 表示 manifest 所在目錄
+  merged_model_dir: null          # 舊設定相容；新部署請用 rejection_artifact_dir
+  merged_model_required: false    # 舊設定相容；新部署由 rejection_method=artifact 驗證
   load_in_4bit: false             # 生成模型量化；須與 MoEA-Trainer 訓練側載入設定一致
   dtype: float16
   max_input_tokens: 4096          # prompt 截斷長度（左 padding）

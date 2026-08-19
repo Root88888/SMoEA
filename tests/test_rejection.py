@@ -7,8 +7,8 @@ class FakeEngine:
     def __init__(self):
         self.calls = []
 
-    def ensure_merged(self):
-        self.calls.append("merged")
+    def ensure_rejection(self):
+        self.calls.append("rejection")
         return {"condition_id": "adamerging_pp", "run_id": "run-123"}
 
     def generate(self, prompts):
@@ -25,7 +25,7 @@ class RejectionTests(unittest.TestCase):
         self.assertEqual(output, "merged answer")
         self.assertEqual(
             engine.calls,
-            ["merged", ("generate", ["complete prompt"])],
+            ["rejection", ("generate", ["complete prompt"])],
         )
 
 

@@ -6,7 +6,7 @@ scripts/selftest_main_pipeline.py
 【主程式管線自測】零 GPU、零模型——沿用端到端自測的合成資產，
 把 main.py 批次模式完整走一遍：decide → 送審打分（偽 scorer）→
 finalize → 按任務分組「生成」（stub 引擎）→ jsonl 落地。驗證：
-  - 路由樣本使用 task adapter、拒絕樣本使用 selected merged model；
+  - 路由樣本使用 task adapter、拒絕樣本使用 selected rejection method；
   - 每行診斷鍵齊全（zone/margin/pval/top_units/top_tasks/…）；
   - stub 引擎收到的 adapter 切換與 routed_to 一致。
 
@@ -42,10 +42,10 @@ class StubEngine:
     def ensure_adapter(self, task_key):
         self.switches.append(task_key)
 
-    def ensure_merged(self):
-        self.switches.append("merged_model")
-        return {"condition_id": "synthetic_merge", "run_id": "run-synth",
-                "format": "dense_delta_v1"}
+    def ensure_rejection(self):
+        self.switches.append("rejection")
+        return {"method": "base", "condition_id": "base", "run_id": None,
+                "format": "base_model"}
 
     def generate(self, prompts):
         return [f"[stub:{self.switches[-1]}] {p[:24]}" for p in prompts]
@@ -97,10 +97,10 @@ def main():
                   "top_units", "top_tasks", "top_sims"):
             assert k in d, f"診斷缺鍵 {k}"
         if l["routed_to"] is None:
-            assert l["output"].startswith("[stub:merged_model]")
-            assert l["model_source"] == "merged_model"
-            assert l["merged_condition_id"] == "synthetic_merge"
-            assert l["merged_run_id"] == "run-synth"
+            assert l["output"].startswith("[stub:rejection]")
+            assert l["model_source"] == "rejection"
+            assert l["rejection_condition_id"] == "base"
+            assert l["rejection_run_id"] is None
             assert d["zone"] in (2, 3)
         else:
             assert l["model_source"] == "task_adapter"
@@ -109,7 +109,7 @@ def main():
             assert l["output"].startswith(f"[stub:{l['routed_to']}]"), \
                 f"生成任務與路由不符：{l['routed_to']} vs {l['output'][:30]}"
     print(f"[MAIN-PASS] 批次 {len(lines)} 筆：路由 {n_route}／拒絕 {n_rej}"
-          f"（merged output 完整）；診斷鍵齊全；model source 與路由一致")
+          f"（rejection output 完整）；診斷鍵齊全；model source 與路由一致")
     shutil.rmtree(root)
     print("ALL PASS（合成環境已清理）")
 

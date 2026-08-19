@@ -1,185 +1,152 @@
-# SMoEA／MoEA-Trainer 交付架構與操作指令
+# SMoEA rejection runtime 與 benchmark 操作指南
 
 更新日期：2026-08-19
 
-## 1. 目前架構
+## 1. 交付架構
 
-目前是兩個獨立 repository，透過一個可攜式 `merged_model/` 資料夾交接；
-SMoEA 不 import MoEA-Trainer，也不會在收到 query 時重新 merge。
+公司只需要這一個 SMoEA repository。MoEA-Trainer 可以在內部產生 merge／routing
+assets，但不是線上依賴；模型、adapters、datasets 與衍生 weights 都由外部路徑掛載。
 
 ```text
-150 source adapters
-        │
-        ▼
-MoEA-Trainer：moea-repro prepare <condition>
-        │
-        └── runs/<condition>/<run-id>/prepare/merged_model/
-              ├── result.json
-              └── dense_delta.safetensors
-                            │
-                            ▼
 answer-free full prompt → SMoEA Router
-                            ├── 命中：task adapter
-                            └── 拒絕：selected merged model
-                                         │
-                                         ▼
-                              interactive／batch output
+                         ├── 命中 → task adapter
+                         └── 拒絕 → Rejection Runtime
+                                      ├── base model
+                                      ├── selected merged artifact
+                                      ├── Direct Arrow (150 experts)
+                                      └── Taskwise K16 Arrow (16 experts)
 ```
 
-版本基準：
+互動、SMoEA batch 與 rejection benchmark 都呼叫同一個
+`InferenceEngine.ensure_rejection() + generate()`，不維護第二套推論程式。
 
-- `Tincan0325/SMoEA`：`main`，整合基準 `4475923a`。
-- `Tincan0325/MoEA-Trainer`：`feature/taskwise-k16-arrow`，`3870f3a9`。
+## 2. 十個方法現在如何使用
 
-## 2. 方法與 serving 關係
+| condition | 線上 rejection | 所需外部檔案 |
+|---|---|---|
+| `base` | 支援 | base model |
+| `ta` | 支援 | `prepare/merged_model/` |
+| `pico_ta` | 支援 | `prepare/merged_model/` |
+| `ties_only` | 支援 | `prepare/merged_model/` |
+| `dare_ties_ta` | 支援 | `prepare/merged_model/` |
+| `adamerging_pp` | 支援 | 最佳化後的 `prepare/merged_model/` |
+| `lora_lego` | 支援 | `prepare/merged_model/` |
+| `arrow` | 支援 | ordered adapter manifest + 150 adapters；prepared prototypes 選填 |
+| `taskwise_k16_arrow` | 支援 | 完整 `prepare/`（16 代表 adapters + prototypes） |
+| `lorahub` | benchmark only | dataset／seed-specific adaptations，沒有通用線上狀態 |
 
-以下六種方法會從 150 adapters 建立可供 SMoEA 載入的
-`dense_delta_v1` artifact：
+Direct Arrow 不做 merging 或訓練。未提供 `rejection_router_dir` 時，SMoEA 會在第一次
+reject 前從 adapters 計算一次 prototypes；正式部署建議提供 `moea-repro prepare arrow`
+產生的 `prepare/`，啟動更快且有 checksum。Taskwise K16 的分群與代表 adapters 必須
+離線準備，不會在 query 時建置。
 
-```text
-ta  pico_ta  ties_only  dare_ties_ta  adamerging_pp  lora_lego
-```
+## 3. 線上／互動指令
 
-其中 `adamerging_pp` 需要 source calibration prompts，執行固定 500 iterations
-的係數最佳化；其餘五種不做梯度訓練，但仍需執行各自的合併計算。
-
-以下四種只參與 Benchmark Harness，沒有單一 SMoEA serving artifact：
-
-```text
-base  arrow  taskwise_k16_arrow  lorahub
-```
-
-`arrow` 使用 150 adapters routing；`taskwise_k16_arrow` 建立 16 個代表 adapters
-後 routing；LoRAHub 產生 dataset／seed-specific adaptations。SMoEA 目前不接受這三種
-結果作為 rejection path 的 selected merged model。
-
-## 3. 建立 merged model
-
-```bash
-git clone -b feature/taskwise-k16-arrow \
-  https://github.com/Tincan0325/MoEA-Trainer.git
-cd MoEA-Trainer
-
-python -m pip install -r requirements.lock
-python -m pip install -e . --no-deps
-```
-
-先驗證輸入，再建立選定方法：
-
-```bash
-moea-repro validate ties_only \
-  --adapter-root /data/pool150 \
-  --manifest /data/pool150_manifest.json \
-  --output-root /data/artifacts
-
-moea-repro prepare ties_only \
-  --adapter-root /data/pool150 \
-  --manifest /data/pool150_manifest.json \
-  --output-root /data/artifacts \
-  --cache-root /data/huggingface-cache \
-  --device cuda
-
-moea-repro status ties_only --output-root /data/artifacts
-```
-
-AdaMerging++ 另加 calibration data：
-
-```bash
-moea-repro prepare adamerging_pp \
-  --adapter-root /data/pool150 \
-  --manifest /data/pool150_manifest.json \
-  --source-data-root /data/source-calibration \
-  --output-root /data/artifacts \
-  --cache-root /data/huggingface-cache \
-  --device cuda
-```
-
-要連同 NI／BBH／MMLU-Pro benchmark 一起跑，改用 `moea-repro run`，並加上
-`--benchmark-root`；`--smoke` 代表每個 suite 只跑第一筆。
-
-## 4. 啟動 SMoEA
-
-```bash
-git clone https://github.com/Tincan0325/SMoEA.git
-cd SMoEA
-```
-
-準備資料：
-
-```text
-dataset/train_data/task{N}_train.json   router 建置
-dataset/test_data/task{N}_test.json     batch 才需要
-adapter/task{N}/                        routed task adapters
-/data/artifacts/.../merged_model/       rejection 使用的 selected merge
-```
-
-建立環境與 serving router assets：
-
-```bash
-bash scripts/setup_workspace.sh
-```
-
-完成後先啟用腳本最後印出的環境（預設為此 repo 下的 `.conda/smoea`），再執行下列
-interactive／batch 指令。
-
-Production interactive：
+Base model：
 
 ```bash
 python main.py --mode interactive \
-  --set system.merged_model_dir=/data/artifacts/runs/ties_only/<run-id>/prepare/merged_model \
-  --set system.merged_model_required=true \
+  --set system.rejection_method=base
+```
+
+靜態 merged artifact（六個 condition 共用同一介面）：
+
+```bash
+python main.py --mode interactive \
+  --set system.rejection_method=artifact \
+  --set system.rejection_artifact_dir=/data/runs/ties_only/RUN_ID/prepare/merged_model \
   --set system.dtype=bfloat16
 ```
 
-輸入必須是完整任務要求與內容，但不能包含答案；多行輸入使用 `:paste`，最後輸入
-`:send`。
-
-Batch：
+Direct Arrow，使用已準備的 prototypes：
 
 ```bash
-python main.py --mode batch \
-  --tasks 0,1 \
-  --limit 5 \
-  --set system.merged_model_dir=/data/artifacts/runs/ties_only/<run-id>/prepare/merged_model \
-  --set system.merged_model_required=true \
-  --set system.dtype=bfloat16
+python main.py --mode interactive \
+  --set system.rejection_method=arrow \
+  --set system.rejection_router_dir=/data/runs/arrow/RUN_ID/prepare \
+  --set system.rejection_adapter_manifest=/data/pool150/manifest.json \
+  --set system.rejection_adapter_root=/data/pool150
 ```
 
-結果寫入 `results/main_batch_outputs.jsonl`。每筆會標示 `task_adapter` 或
-`merged_model`、condition ID、run ID 與 router 診斷。
-
-## 5. 驗收指令與目前證據
+Direct Arrow，不預先提供 prototypes：
 
 ```bash
-python -m unittest discover -v
+python main.py --mode interactive \
+  --set system.rejection_method=arrow \
+  --set system.rejection_adapter_manifest=/data/pool150/manifest.json \
+  --set system.rejection_adapter_root=/data/pool150
+```
+
+Taskwise K16 Arrow：
+
+```bash
+python main.py --mode interactive \
+  --set system.rejection_method=taskwise_k16_arrow \
+  --set system.rejection_router_dir=/data/runs/taskwise_k16_arrow/RUN_ID/prepare
+```
+
+輸入必須是完整任務要求與內容，但不能包含本題答案。多行輸入先輸入 `:paste`，最後以
+`:send` 送出。
+
+## 4. Rejection benchmark 的範圍
+
+這個入口跳過 SMoEA 外層 router，直接比較「router reject 後的指定方法」。它讀取固定
+15-OOD：5 個 Natural Instructions、5 個 BBH、5 個 MMLU-Pro，完整執行為 4,159 筆。
+
+```bash
+python scripts/run_rejection_benchmark.py \
+  --benchmark-root /data/moea-benchmark \
+  --output-dir results/rejection-base \
+  --set system.rejection_method=base \
+  --set system.dtype=bfloat16 \
+  --batch-size 8
+```
+
+先跑三筆 GPU smoke（NI／BBH／MMLU-Pro 各第一筆）：
+
+```bash
+python scripts/run_rejection_benchmark.py \
+  --benchmark-root /data/moea-benchmark \
+  --output-dir results/rejection-smoke \
+  --set system.rejection_method=base \
+  --set system.dtype=bfloat16 \
+  --smoke
+```
+
+同一指令可改成上節任一 artifact／Arrow 設定。輸出：
+
+```text
+<output-dir>/ni_results.json
+<output-dir>/bbh_results.json
+<output-dir>/mmlu_pro_results.json
+<output-dir>/metrics.json
+```
+
+Benchmark 固定使用 bfloat16、8,192 input tokens、1,024 new tokens，超長 prompt 會停止
+而不會靜默截斷。本地評分包含 classification accuracy、generation ROUGE-L 與 BLEU。GPT judge 不會被
+自動呼叫，`metrics.json` 會明確記錄 `judge: not_run`。
+
+這個 benchmark 不包含：SMoEA accept/reject 準確率、source adapter 訓練、merge 方法的
+prepare 成本、LoRAHub adaptation 或 Docker 建置。要驗證完整外層 router，使用原本的
+`python main.py --mode batch`。
+
+## 5. 資產產生與 repo 關係
+
+靜態 merge、Arrow prototypes 與 Taskwise K16 assets 仍可由內部 MoEA-Trainer 的
+`moea-repro prepare <condition>` 產生。交付時只把其輸出掛載給 SMoEA：SMoEA 不 import、
+clone 或安裝 MoEA-Trainer。
+
+Git 不包含 base model、150 adapters、benchmark dataset、merged weights 或正式結果。
+`artifact` 與 prepared Arrow 會在接受 query 前驗證檔案大小／checksum；Taskwise K16
+也會驗證 16 個代表 adapter。
+
+## 6. 驗收
+
+```bash
+python -m unittest discover -s tests -v
 python scripts/selftest_main_pipeline.py
 ```
 
-- SMoEA 單元測試：21/21 通過。
-- 合成 batch 主流程：320 筆完成；311 筆使用 task adapter，9 筆 rejection 使用
-  merged model，沒有 `output=null`。
-- 真實 GPU 已驗證 `task0 → dense merged → task1 → task0`，dense layer equation 與
-  切回 task0 的 logits 誤差皆為 0。
-- 上述 batch 是完整主流程的合成模型測試；尚未以正式 selected merge 跑完整真實
-  dataset batch。舊 AdaMerging smoke weight 曾產生大量空白文字，不可當成 production
-  selected model；正式交付需以最終選定 artifact 重跑 non-empty generation gate。
-
-真實 artifact 切換 smoke：
-
-```bash
-python scripts/smoke_merged_model_gpu.py \
-  --artifact /data/artifacts/runs/<condition>/<run-id>/prepare/merged_model \
-  --adapter-dir adapter \
-  --task-a task0 \
-  --task-b task1 \
-  --prompt-file examples/merged_model_smoke/task2_title_prompt.txt \
-  --output results/merged_model_gpu_smoke.json
-```
-
-## 6. 交付限制
-
-- Git 不包含 base model、150 adapters、datasets、merged weights 或 benchmark results。
-- 公司若自行執行 `prepare`，不需預先取得 derived merged weights；若只執行 SMoEA，
-  則需提供選定方法的完整 `merged_model/` 資料夾，不能只複製 weight file。
-- 目前 single-repo 與 Docker／OCI image 尚未實作；現階段仍需依兩個 lock 建立兩個
-  Python environments。不可把規劃中的 `docker compose` 指令當成已完成入口。
+有正式 GPU 與 assets 時，再分別執行互動 reject、`run_rejection_benchmark.py --smoke`
+及完整 4,159 筆 benchmark。單元測試證明切換、asset 驗證與完整 prompt 傳遞；它不取代
+真實 8B model 的 GPU 驗收。

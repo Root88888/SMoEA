@@ -2,7 +2,7 @@
 
 ![architecture](docs/architecture.jpg)
 
-完整的 MoEA-Trainer → merged artifact → SMoEA 運作方式、公司操作指令與目前驗收
+完整的 rejection runtime、外部 assets、benchmark 操作指令與目前驗收
 範圍，見 [`docs/DELIVERY_ARCHITECTURE_RUNBOOK.md`](docs/DELIVERY_ARCHITECTURE_RUNBOOK.md)。
 
 ## 目錄結構
@@ -21,13 +21,16 @@ router/                     路由決策層
 system/                     路由之後的執行層
   inference.py              InferenceEngine：base model 常駐、per-task adapter 熱切換、生成
   merged_model.py           delivery artifact 驗證、exact dense delta 非破壞切換
-  rejection.py              拒絕分支：使用啟動時明確選定的 merged model
+  arrow_runtime.py          Direct Arrow／Taskwise-K16 assets 驗證與動態 token routing
+  rejection.py              拒絕分支：統一啟用 base、artifact 或 Arrow
+  benchmark.py              15-OOD loader 與本地評分，共用 production rejection runtime
 scripts/
   check_env.py              環境體檢
   selftest_*.py             三支自測（零資料零 GPU）
   build_router_assets.py    路由資產離線建置（掃 dataset 自動推導任務集合）
   eval_router.py            路由評測三段
   eval_baseline_*.py        兩支 baseline
+  run_rejection_benchmark.py 直接測試 rejection method 的固定 15-OOD benchmark
   verify_flow_table.py      評測結果獨立重放驗證
   plot_centroids.py         質心結構圖
 dataset/                    資料（不進 git）
@@ -35,7 +38,8 @@ dataset/                    資料（不進 git）
   test_data/task{N}_test.json      批次評測才需要
   ood_test_data/task149_test.json  批次評測用的原始 OOD task149
 adapter/task{N}/            LoRA adapters（不進 git）：請建立 adapter 目錄，將 task{N} 直接放在 adapter/ 下，task 內如有多個 checkpoint-*/ 自動取最新
-<external>/merged_model/    MoEA-Trainer delivery 產生的 selected merging artifact（不進 git）
+<external>/merged_model/    靜態 merging condition 的 serving artifact（不進 git）
+<external>/arrow/prepare/   Arrow prototypes／Taskwise 代表 adapters（不進 git）
 assets/                     路由建置產物；unit_descriptions.json 為人工校訂的單位說明書
 results/                    評測與批次輸出
 docs/                       架構圖與文件
@@ -58,8 +62,8 @@ docs/                       架構圖與文件
    - OOD Natural Instructions `task149`：保留原始檔名，放到
      `dataset/ood_test_data/task149_test.json`；source Adapter Slot `task149`
      的測試檔仍可留在 `dataset/test_data/task149_test.json`
-   - selected merge：將 MoEA-Trainer delivery 的完整
-     `prepare/merged_model/` 放在共享儲存；不要只複製 weight file
+   - rejection method 所需檔案：artifact 方法提供完整 `prepare/merged_model/`；
+     Arrow 提供 ordered adapter manifest，並可另提供 `prepare/` routing assets
 
 要跑完整 benchmark 時，先執行
 `python scripts/map_ood_aliases.py --dataset-dir dataset`，為 OOD `task149`
@@ -89,19 +93,18 @@ docs/                       架構圖與文件
    首次執行自動下載生成與裁決模型（各約 16GB）。請輸入完整任務要求與內容
    （相當於不含答案的 `full_prompt`）。多行內容先輸入 `:paste`，貼完後以
    單獨一行 `:send` 送出。應看到 Router 判定與模型回答；
-   輸入無關文字應看到進入
-   selected merged model 的回答。Production 啟動請明確指定 artifact：
+   輸入無關文字應看到進入 rejection inference。預設 `base`；使用 merged
+   artifact 時明確指定：
 
 ```bash
    python main.py --mode interactive \
-     --set system.merged_model_dir=/shared/run/prepare/merged_model \
-     --set system.merged_model_required=true \
+     --set system.rejection_method=artifact \
+     --set system.rejection_artifact_dir=/shared/run/prepare/merged_model \
      --set system.dtype=bfloat16
 ```
 
-`merged_model_dir: null` 僅供不觸發拒絕分支的開發／router 測試。Production
-設為 required 後，路徑未設定、schema 不符、base model 不同、檔案大小或 checksum
-錯誤都會在接受輸入前停止，不會改用 base model。
+`artifact` 路徑未設定、schema 不符、base model 不同、檔案大小或 checksum
+錯誤都會在接受輸入前停止，不會偷偷改用 base model。其他方法的設定見交付指南。
  
 5. 批次評測
 
@@ -112,8 +115,8 @@ docs/                       架構圖與文件
    python main.py --mode batch          # --tasks a,b 限任務、--limit n 每個任務test set只取前n筆
 ```
  
-   路由命中使用 task adapter；router 拒絕則按 batch 集中使用 selected merged
-   model，不再寫 `output=null`。逐筆結果（含 Router 診斷、實際 model source、
+   路由命中使用 task adapter；router 拒絕則按 batch 集中使用 selected rejection
+   method，不再寫 `output=null`。逐筆結果（含 Router 診斷、實際 model source、
    condition/run identity 與模型輸出）落於
    `results/main_batch_outputs.jsonl`。
  
@@ -142,8 +145,8 @@ python main.py --mode batch
 
 ## 從哪裡下手
 
-- **拒絕分支（Model Merging）**：入口 `system/rejection.py`；artifact 契約與
-  checksum 驗證在 `system/merged_model.py`，task／merged 切換在
+- **拒絕分支**：入口 `system/rejection.py`；artifact 契約在
+  `system/merged_model.py`，Arrow 契約在 `system/arrow_runtime.py`，所有切換集中於
   `system/inference.py`。SMoEA 不會在 query 時重新 merge，也不會自動選最新 run。
 - **生成行為**（prompt、解碼參數、adapter 解析）：`system/inference.py`。
 - **新增任務**：樣本放 `dataset/`、adapter 放 `adapter/task{N}/`、
