@@ -2,6 +2,9 @@
 
 ![architecture](docs/architecture.jpg)
 
+完整的 MoEA-Trainer → merged artifact → SMoEA 運作方式、公司操作指令與目前驗收
+範圍，見 [`docs/DELIVERY_ARCHITECTURE_RUNBOOK.md`](docs/DELIVERY_ARCHITECTURE_RUNBOOK.md)。
+
 ## 目錄結構
 
 ```
