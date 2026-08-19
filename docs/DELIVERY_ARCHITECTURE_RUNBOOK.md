@@ -1,6 +1,6 @@
 # SMoEA rejection runtime 與 benchmark 操作指南
 
-更新日期：2026-08-19
+更新日期：2026-08-20
 
 ## 1. 交付架構
 
@@ -16,6 +16,11 @@ answer-free full prompt → SMoEA Router
                                       ├── Direct Arrow (150 experts)
                                       └── Taskwise K16 Arrow (16 experts)
 ```
+
+拒絕分支要用哪一個，由 **artifact registry**（`system.artifact_registry` 指向的
+JSON）明確宣告；互動模式 `:rejection use <id>`、批次模式與 benchmark 的
+`--artifact <id>` 三個入口共用同一份宣告。系統不掃描目錄，也不自動挑最新的 run。
+見 [ADR-0001](adr/0001-runtime-artifact-registry.md)。
 
 互動、SMoEA batch 與 rejection benchmark 都呼叫同一個
 `InferenceEngine.ensure_rejection() + generate()`，不維護第二套推論程式。
@@ -34,6 +39,12 @@ answer-free full prompt → SMoEA Router
 | `arrow` | 支援 | ordered adapter manifest + 150 adapters；prepared prototypes 選填 |
 | `taskwise_k16_arrow` | 支援 | 完整 `prepare/`（16 代表 adapters + prototypes） |
 | `lorahub` | benchmark only | dataset／seed-specific adaptations，沒有通用線上狀態 |
+
+`ta`、`ties_only`、`dare_ties_ta` 這三個 condition 現在也可以**由 SMoEA 自己從 150 個
+adapter 算出來**（`scripts/merge_pool150.py`，或 `setup_workspace.sh --artifacts merge`），
+不必等 producer 產出。超參數鎖成封板值，使用者只選方法。權重運算已從 MoEA-Trainer
+搬入並通過等價驗證，見 [ADR-0002](adr/0002-online-merge-and-artifact-delivery.md)。
+其餘 condition 仍只接受離線預備的 artifact。
 
 Direct Arrow 不做 merging 或訓練。未提供 `rejection_router_dir` 時，SMoEA 會在第一次
 reject 前從 adapters 計算一次 prototypes；正式部署建議提供 `moea-repro prepare arrow`
@@ -140,11 +151,31 @@ Git 不包含 base model、150 adapters、benchmark dataset、merged weights 或
 `artifact` 與 prepared Arrow 會在接受 query 前驗證檔案大小／checksum；Taskwise K16
 也會驗證 16 個代表 adapter。
 
+**權重檔的取得有兩條路，結果等價：**
+
+- 從私有 Hugging Face repo 下載（`scripts/fetch_artifact.py`，上傳端
+  `scripts/push_artifact.py`）
+- 用本機的 150 個 adapter 自己算（`scripts/merge_pool150.py`，GPU 或 CPU 皆可）
+
+兩者都只在 setup 階段執行。**服務執行期不對任何外部服務發出請求。**
+
+artifact 的 `run_id` 取產出檔案 sha256 的前 16 碼——編號相同保證內容相同。不從輸入
+推算，因為同樣的輸入在不同型號的顯卡上會有極少數元素差 1 ulp（浮點加法不滿足結合律）。
+跨硬體重現的驗收標準因此是「差異不超過 1 ulp」，由 `scripts/verify_against_producer.py`
+量測。
+
 ## 6. 驗收
 
 ```bash
 python -m unittest discover -s tests -v
 python scripts/selftest_main_pipeline.py
+```
+
+搬入的 merge 實作與 producer 是否等價，用：
+
+```bash
+python scripts/verify_against_producer.py --method ties --adapter-dir adapter \
+    --producer <producer 的 merged_model 目錄> --work-dir <暫存目錄> --device cuda
 ```
 
 有正式 GPU 與 assets 時，再分別執行互動 reject、`run_rejection_benchmark.py --smoke`
