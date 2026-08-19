@@ -124,8 +124,7 @@ python scripts/eval_outputs_llm_judge.py --batch results/main_batch_outputs_{時
 - `--resume`　斷點續評（跳過已成功評分的樣本）
 - `--workers 8`　併發請求數
 
-輸出 `results/llm_judge_{時間戳}.json`，時間戳繼承所評 batch 檔的
-產出時間。
+輸出 `results/llm_judge_{時間戳}.json`，時間戳繼承所評 batch 檔的產出時間。
 
 ## 從哪裡下手
 
