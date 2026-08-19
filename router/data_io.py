@@ -19,6 +19,8 @@ import re
 
 import numpy as np
 
+from .config import routing_text_mode
+
 
 # ---------------------------------------------------------------------------
 # 樣本檔
@@ -89,7 +91,7 @@ def load_task_texts(cfg, task_id, test=False):
     ds = cfg["paths"]["dataset_dir"]
     sub = "test_data" if test else "train_data"
     path = find_file(os.path.join(ds, sub), task_id, test=test)
-    mode = cfg["data"].get("routing_text", cfg["data"]["field"])
+    mode = routing_text_mode(cfg)
     if mode == "answer_free_full_prompt":
         return read_texts(
             path,

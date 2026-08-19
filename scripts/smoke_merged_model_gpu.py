@@ -57,8 +57,8 @@ def main():
         "system": {
             "base_model": artifact.base_model_name,
             "adapter_dir": args.adapter_dir,
-            "merged_model_dir": args.artifact,
-            "merged_model_required": True,
+            "rejection_method": "artifact",
+            "rejection_artifact_dir": args.artifact,
             "load_in_4bit": False,
             "dtype": artifact.torch_dtype,
             "max_input_tokens": 512,
@@ -103,7 +103,7 @@ def main():
 
     engine.ensure_adapter(args.task_a)
     task_a_first = last_token_logits(engine, prompt)
-    merged_info = engine.ensure_merged()
+    merged_info = engine.ensure_rejection()
     merged_logits = last_token_logits(engine, prompt)
     merged_text = engine.generate([prompt])[0]
     generation_nonempty = bool(merged_text.strip())

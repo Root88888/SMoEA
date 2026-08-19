@@ -36,6 +36,11 @@ def load_config(path="configs/default.yaml", overrides=None):
     return cfg
 
 
+def routing_text_mode(cfg):
+    """路由文字的來源欄位：data.routing_text；未設定時退回舊的 data.field。"""
+    return cfg["data"].get("routing_text", cfg["data"]["field"])
+
+
 def add_config_args(parser=None):
     """給入口腳本共用的兩個參數：--config 與 --set。"""
     p = parser or argparse.ArgumentParser()

@@ -37,6 +37,7 @@ from router.config import (  # noqa: E402
     config_from_cli,
     discover_serving_tasks,
     discover_tasks,
+    routing_text_mode,
 )
 from router.core import Router, DESCRIPTIONS  # noqa: E402
 from router.embedding import ensure_task_embeddings  # noqa: E402
@@ -65,7 +66,7 @@ def main():
         id_tasks, ood_tasks = discover_tasks(cfg)
         print(f"任務集合：ID {len(id_tasks)} 個、OOD {len(ood_tasks)} 個"
               f"（由 {cfg['paths']['dataset_dir']} 掃描推導）")
-    routing_text = cfg["data"].get("routing_text", cfg["data"]["field"])
+    routing_text = routing_text_mode(cfg)
     print(f"路由文字：{routing_text}")
 
     # ---- 嵌入快取 ----
