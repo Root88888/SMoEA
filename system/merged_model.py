@@ -1,9 +1,17 @@
-"""Validate a selected ``merged_model/`` directory without producer imports."""
+"""Write and validate a ``merged_model/`` artifact — the contract's one home.
+
+Reader and writer live together on purpose (ADR-0002): the producer used to own
+the writer while SMoEA owned the validator, and the two drifted apart — artifacts
+shipped without ``inference`` and without ``modules[].tensor_name``. One module,
+one definition, and the round-trip test keeps them honest.
+"""
 
 from __future__ import annotations
 
 import hashlib
 import json
+import os
+import shutil
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -162,6 +170,41 @@ def validate_base_model_config(artifact: MergedModelArtifact) -> None:
             "configured base model config does not match merged model artifact: "
             f"expected {artifact.base_model_config_sha256}, found {digest}"
         )
+
+
+def resolve_base_model_identity(name: str) -> dict[str, str]:
+    """解析 base model 的 config 並算出指紋，供寫出 artifact 時記錄。
+
+    與 :func:`validate_base_model_config` 用**同一套**正規化與雜湊——兩者放在同
+    一個模組正是為了不可能各自演進。
+    """
+    from transformers.utils.hub import cached_file
+
+    try:
+        resolved = cached_file(name, "config.json")
+    except Exception as exc:
+        raise MergedModelError(f"無法解析 base model {name!r}：{exc}") from exc
+    if resolved is None:
+        raise MergedModelError(f"無法解析 base model {name!r} 的 config")
+    path = Path(resolved)
+    try:
+        config = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise MergedModelError(f"讀不到 base model config {path}：{exc}") from exc
+    canonical = json.dumps(
+        config, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+    ).encode("utf-8")
+    parts = path.parts
+    revision = (
+        parts[parts.index("snapshots") + 1]
+        if "snapshots" in parts and parts.index("snapshots") + 1 < len(parts)
+        else "local"
+    )
+    return {
+        "name": name,
+        "revision": revision,
+        "config_sha256": hashlib.sha256(canonical).hexdigest(),
+    }
 
 
 def validate_inference_config(
@@ -360,3 +403,126 @@ def load_merged_model_artifact(
         modules=tuple(modules),
         manifest=payload,
     )
+
+
+# ---------------------------------------------------------------------------
+# 寫出（與上方驗證器對稱；round-trip 測試守住兩者一致）
+# ---------------------------------------------------------------------------
+SCHEMA_VERSION = 1
+DENSE_DELTA_FORMAT = "dense_delta_v1"
+RESULT_FILENAME = "result.json"
+DENSE_DELTA_FILENAME = "dense_delta.safetensors"
+
+_SAFETENSORS_DTYPES = {
+    "BOOL": "bool", "U8": "uint8", "I8": "int8", "I16": "int16", "U16": "uint16",
+    "F16": "float16", "BF16": "bfloat16", "I32": "int32", "U32": "uint32",
+    "F32": "float32", "F64": "float64", "I64": "int64", "U64": "uint64",
+}
+_DELTA_SUFFIX = ".delta_weight"
+
+
+def _dense_delta_inventory(path: Path) -> list[dict[str, Any]]:
+    """從 safetensors 標頭讀出模組清單，不載入權重。"""
+    import struct
+
+    with path.open("rb") as handle:
+        header_length = struct.unpack("<Q", handle.read(8))[0]
+        header = json.loads(handle.read(header_length).decode("utf-8"))
+    modules = []
+    for tensor_name, meta in sorted(header.items()):
+        if tensor_name == "__metadata__":
+            continue
+        if not tensor_name.endswith(_DELTA_SUFFIX):
+            raise MergedModelError(
+                f"dense delta 張量名應以 {_DELTA_SUFFIX} 結尾：{tensor_name!r}")
+        dtype = _SAFETENSORS_DTYPES.get(meta["dtype"])
+        if dtype is None:
+            raise MergedModelError(f"不支援的張量 dtype：{meta['dtype']!r}")
+        modules.append({
+            "name": tensor_name[: -len(_DELTA_SUFFIX)],
+            "tensor_name": tensor_name,
+            "shape": list(meta["shape"]),
+            "dtype": dtype,
+        })
+    if not modules:
+        raise MergedModelError("dense delta 沒有任何模組")
+    return modules
+
+
+def write_dense_delta_artifact(
+    directory: str | Path,
+    *,
+    source: str | Path,
+    condition_id: str,
+    run_id: str,
+    base_model_name: str,
+    base_model_revision: str,
+    base_model_config_sha256: str,
+    torch_dtype: str,
+    quantization: str = "none",
+    producer: dict[str, Any] | None = None,
+    adapter_pool: dict[str, Any] | None = None,
+    merge_report: dict[str, Any] | None = None,
+) -> MergedModelArtifact:
+    """把一份 dense delta 打包成可服務的 artifact，並立刻以驗證器複驗。
+
+    ``result.json`` **最後才寫**：中斷的複製因此永遠不會被誤認為完整的 artifact。
+    """
+    source_path = Path(source)
+    if not source_path.is_file():
+        raise MergedModelError(f"dense delta 不存在：{source_path}")
+    if len(base_model_config_sha256) != 64:
+        raise MergedModelError("base model config SHA-256 必須是 64 個十六進位字元")
+    try:
+        int(base_model_config_sha256, 16)
+    except ValueError as exc:
+        raise MergedModelError(
+            "base model config SHA-256 必須是 64 個十六進位字元") from exc
+
+    modules = _dense_delta_inventory(source_path)
+    dtypes = {module["dtype"] for module in modules}
+    if dtypes != {torch_dtype}:
+        raise MergedModelError(
+            f"權重檔的 dtype {sorted(dtypes)} 與宣告的 {torch_dtype!r} 不符")
+
+    artifact_dir = Path(directory)
+    artifact_dir.mkdir(parents=True, exist_ok=True)
+    weight_path = artifact_dir / DENSE_DELTA_FILENAME
+    if source_path.resolve() != weight_path.resolve():
+        temporary = weight_path.with_suffix(weight_path.suffix + ".tmp")
+        shutil.copyfile(source_path, temporary)
+        os.replace(temporary, weight_path)
+
+    payload: dict[str, Any] = {
+        "schema_version": SCHEMA_VERSION,
+        "format": DENSE_DELTA_FORMAT,
+        "condition_id": condition_id,
+        "run_id": run_id,
+        "base_model": {
+            "name": base_model_name,
+            "revision": base_model_revision,
+            "config_sha256": base_model_config_sha256,
+        },
+        "inference": {"torch_dtype": torch_dtype, "quantization": quantization},
+        "producer": producer or {"repository": "smoea", "commit": "runtime-merge"},
+        "adapter_pool": adapter_pool or {},
+        "weights": [{
+            "path": DENSE_DELTA_FILENAME,
+            "bytes": weight_path.stat().st_size,
+            "sha256": _sha256(weight_path),
+        }],
+        "expected_module_count": len(modules),
+        "modules": modules,
+    }
+    if merge_report is not None:
+        payload["merge"] = merge_report
+
+    manifest_path = artifact_dir / RESULT_FILENAME
+    temporary_manifest = manifest_path.with_suffix(".json.tmp")
+    temporary_manifest.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=1), encoding="utf-8")
+    os.replace(temporary_manifest, manifest_path)
+
+    # 寫完立刻以正式驗證器複驗：writer 與 validator 不一致就在這裡爆，
+    # 不會等到服務啟動才發現。
+    return load_merged_model_artifact(artifact_dir, expected_base_model=base_model_name)
