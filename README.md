@@ -95,9 +95,9 @@ docs/                       架構圖與文件
  
 之後每次開機僅需 `conda activate smoea`；步驟 2、3 為一次性作業。
 
-## 重現路由結果 Router Acc/Ablation/Baseline Comparison
+## 重現路由結果 Routing Zone Outcome and Accuracy/Ablation/Baseline Comparison
 
-### 1. 主評測＋獨立驗證
+### 1. 主評測
 
 ```bash
 # 1a. 分區（CPU 數分鐘）：全部測試樣本分四區、產送審佇列
@@ -106,14 +106,11 @@ python scripts/eval_router.py --mode decide 2>&1 | tee results/eval_decide.txt
 # 1b. 送審打分（GPU 數小時；中斷重跑自動續）：裁決 LLM 對佇列逐筆三題是非
 python scripts/eval_router.py --mode score 2>&1 | tee results/eval_score.txt
 
-# 1c. 結算（不帶 OOD 標記＝無標記模式）
+# 1c. 結算
 python scripts/eval_router.py --mode run 2>&1 | tee results/eval_run.txt
-
-# 1d. 交叉驗證：獨立重放逐格比對六流向
-python scripts/verify_flow_table.py
 ```
 
-### 2. Ablation 變體資產（無多質心版；一次性）
+### 2. Ablation 變體資產準備（無多質心版；一次性）
 
 ```bash
 mkdir -p assets_ablate_nomc
