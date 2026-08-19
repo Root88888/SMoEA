@@ -18,7 +18,7 @@ Adapter Merging 分支的輸出——該分支未實作時 output 為 null，
 
 【少量測試】（先跑 batch 產出結果檔，再評分）
   python main.py --mode batch --tasks 3,7 --limit 5
-  export OPENAI_API_KEY=sk-...
+  export OPENAI_API_KEY=你的 API KEY
   python scripts/eval_outputs_llm_judge.py --limit 5        # 每任務前 5 筆
   python scripts/eval_outputs_llm_judge.py --dry_run        # 不花錢：只驗資料對齊
 【全量】直接不帶 --limit / --tasks；--resume 斷點續評。
