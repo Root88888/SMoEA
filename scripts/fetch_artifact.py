@@ -71,6 +71,23 @@ def fetch(repo_id, condition, run_id, artifact_root, *, revision, token):
     return load_merged_model_artifact(destination), destination
 
 
+def choose_run_id(runs, requested=None):
+    """決定要取哪一個版本。
+
+    遠端只有一個版本時直接用；有多個時**要求明確指定**，不會自己挑「最新的」。
+    上傳新權重之後舊的仍在，這時 fetch 會停下來要你選，而不是靜悄悄換掉。
+    """
+    if requested is not None:
+        if requested not in runs:
+            raise SystemExit(
+                f"遠端沒有 run={requested}；可選：{', '.join(runs)}")
+        return requested
+    if len(runs) != 1:
+        raise SystemExit(
+            f"遠端有多個 run（{', '.join(runs)}），請用 --run-id 指定要哪一個")
+    return runs[0]
+
+
 def register(registry_path, entry_id, artifact_dir, description):
     if os.path.exists(registry_path):
         payload = json.loads(open(registry_path, encoding="utf-8").read())
@@ -115,13 +132,7 @@ def main() -> None:
         return
     if not args.artifact_root:
         parser.error("下載需要 --artifact-root")
-    run_id = args.run_id
-    if run_id is None:
-        if len(runs) != 1:
-            # 不自動挑「最新的」——那正是本專案刻意排除的行為。
-            raise SystemExit(
-                f"遠端有多個 run（{', '.join(runs)}），請用 --run-id 指定")
-        run_id = runs[0]
+    run_id = choose_run_id(runs, args.run_id)
 
     artifact, directory = fetch(args.repo, args.condition, run_id,
                                 args.artifact_root,
