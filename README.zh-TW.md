@@ -34,8 +34,10 @@ scripts/
   eval_baseline_*.py        兩支 baseline
   eval_outputs_llm_judge.py 批次輸出的 LLM 評分
   merge_pool150.py          用本機 adapter 建置某個 condition 的權重檔
+  fetch_adapter_pool.py     自 Hugging Face 取得 150 個 adapter
+  push_adapter_pool.py      上傳 adapter 池到 Hugging Face
   fetch_artifact.py         自 Hugging Face 取得權重檔
-  push_artifact.py          上傳權重檔到私有 Hugging Face repo
+  push_artifact.py          上傳權重檔到 Hugging Face repo
   migrate_artifact_manifest.py  修補舊版工具寫出的說明檔
   verify_against_producer.py    比對本機建置與參考版本
   smoke_rejection_methods.py    逐一確認每個拒絕方法都能服務
@@ -45,7 +47,7 @@ scripts/
 dataset/                    資料（不進 git）；請建立 dataset 目錄以及 dataset/train_data/ 和 dataset/test_data/
   train_data/task{N}_train.json
   test_data/task{N}_test.json
-adapter/task{N}/            LoRA adapters（不進 git）：請建立 adapter 目錄，將 task{N} 直接放在 adapter/ 下，task 內如有多個 checkpoint-*/ 自動取最新
+adapter/task{N}/            LoRA adapters（不進 git）：由 setup_workspace.sh 自 Hugging Face 下載。自備則將 task{N} 直接放在 adapter/ 下，task 內如有多個 checkpoint-*/ 自動取最新
 assets/                     路由建置產物；unit_descriptions.json 為人工校訂的單位說明書
 artifacts/                  拒絕分支的權重檔與 registry.json（不進 git）
 results/                    評測與批次輸出
@@ -75,8 +77,9 @@ docs/                       架構圖與文件
         python3 -m zipfile -e dataset/train_data/train_data.zip dataset/train_data/
         python3 -m zipfile -e dataset/test_data/test_data.zip  dataset/test_data/
      ```
-   - adapters：每任務一個目錄，放成 `adapter/task{N}/`；解壓後若外層
-     多包一層目錄，將其中的 `task*` 移出攤平
+   - adapters：不必準備。步驟 3 會自 Hugging Face 下載 150 個 adapter
+     （約 2.7 GB）。要用自己的池就每任務一個目錄放成 `adapter/task{N}/`，
+     步驟 3 加上 `--no-adapter-fetch`。
 
 重要說明: 我在這個系統把原本的 OOD task149 稱為 task9149，以便跟 ID task149 區分，麻煩檔案就位後手動把 OOD task149 檔名改為 task9149_test.json
 
@@ -88,14 +91,25 @@ docs/                       架構圖與文件
    bash scripts/setup_workspace.sh                                          # 只有 base
    bash scripts/setup_workspace.sh --artifacts fetch --hf-repo <org>/<repo> # 另外下載權重檔
    bash scripts/setup_workspace.sh --artifacts merge                        # 另外本機建置
+   bash scripts/setup_workspace.sh --no-adapter-fetch                       # 用自己的 adapter
 ```
 
    `--artifacts` 決定拒絕分支有哪些方法可用，不加就只有 base；詳見〈拒絕分支〉。
 
    自動完成：檔案檢查（缺漏會明確提示）、conda 環境建置與依賴安裝
-   （首次 10-20 分鐘）、環境體檢、查詢嵌入計算與路由資產建置
-   （首次 GPU 數分鐘）。結尾印出「全部就緒」即完成；中途停止時
-   依提示處理後重跑即可（已完成步驟自動跳過）。
+   （首次 10-20 分鐘）、環境體檢、**adapter 池核對**（首次約 2.7 GB）、
+   查詢嵌入計算與路由資產建置（首次 GPU 數分鐘）。結尾印出「全部就緒」
+   即完成；中途停止時依提示處理後重跑即可（已完成步驟自動跳過）。
+
+   adapter 池預設取自 `Tincan0325/smoea-adapter-pool150`，`--adapter-repo`
+   可換來源。每次執行都逐檔與池清單記錄的 sha256 核對，只下載缺漏或不符的，
+   所以中斷後重跑就能修好。`--no-adapter-fetch` 的意思是「這個池不是來自那個
+   repo，不要動它」——用自己訓練的 adapter 時才加。要單獨執行這一步：
+
+```bash
+   python scripts/fetch_adapter_pool.py --repo Tincan0325/smoea-adapter-pool150 --list
+   python scripts/fetch_adapter_pool.py --repo Tincan0325/smoea-adapter-pool150
+```
    
 4. 單筆執行互動
 ```bash
@@ -126,6 +140,38 @@ docs/                       架構圖與文件
    `rejection_condition_id` 與 `rejection_run_id`，可追溯到具體的權重。
  
 之後每次開機僅需 `conda activate smoea`；步驟 2、3 為一次性作業。
+
+## Adapter 池（pool150）
+
+系統的兩半共用同一個池：Router 逐查詢熱切換其中一個，拒絕分支把整池合起來。
+
+| | |
+|---|---|
+| adapter 數 | 150（`task0`–`task48`、`task50`–`task150`；slot 49 未指派） |
+| base model | `unsloth/Meta-Llama-3.1-8B` |
+| rank（`r`） | 8，`lora_alpha` 16，`lora_dropout` 0.1 |
+| `target_modules` | 只有 `down_proj`，沒有掛 attention |
+| 每個 adapter | 約 18 MiB（`adapter_model.safetensors`） |
+| 全池 | 約 2.64 GiB |
+
+上表的設定 150 個完全一致；設定不一致的池不能合成，載入時就會被擋下。
+
+`scripts/fetch_adapter_pool.py` 會在 adapter 旁邊寫一份
+`adapter/pool150_manifest.json`，那份清單就是這個池的定義——**順序依任務
+編號遞增，而順序會影響 merge 的結果**，所以照它建置出來的權重可重現。
+
+散布自己的池是同一套反過來走：
+
+```bash
+hf auth login
+python scripts/push_adapter_pool.py --repo <org>/<repo> --dry-run
+python scripts/push_adapter_pool.py --repo <org>/<repo>
+```
+
+只上傳 `adapter_config.json` 與 `adapter_model.safetensors`；訓練殘留物
+（optimizer 狀態、rng_state、每個 checkpoint 各一份的 tokenizer）不傳——
+那些佔了原始訓練輸出目錄的大半，serving 與合成都讀不到。清單**最後才傳**，
+所以上傳失敗留下的 repo 沒有清單，下載端會直接判定不可用，不會發出半套的池。
 
 ## Router 說明
 
@@ -295,7 +341,8 @@ python scripts/merge_pool150.py --method lorahub \
 ```
 
 adapter 從設定檔的 `system.adapter_dir` 取（與 Router 用的是同一個值），不必另外
-指定；adapter 放在別處時才用 `--adapter-dir` 或 `--manifest` 覆蓋。
+指定；adapter 放在別處時才用 `--adapter-dir` 或 `--manifest` 覆蓋。本機建置需要
+完整的 150 個——見上面〈Adapter 池〉。
 
 超參數是固定的，使用者選方法不調參。同一批 adapter 建置過就不會重算。權重檔的編號取檔案本身雜湊的前 16 碼，**編號相同就保證內容相同**。
 
@@ -372,6 +419,9 @@ python scripts/eval_outputs_llm_judge.py --batch results/main_batch_outputs_{時
   （writer 與 validator）在 `system/merged_model.py`；本機建置在
   `system/merging.py`、`system/adamerging.py`、`system/lorahub.py`。
 - **生成行為**（prompt、解碼參數、adapter 解析）：`system/inference.py`。
+- **adapter 池**：契約（manifest 解析、LoRA 載入、池指紋）在
+  `system/adapter_pool.py`；交付通道是 `scripts/fetch_adapter_pool.py` 與
+  `scripts/push_adapter_pool.py`。
 - **新增任務**：樣本放 `dataset/`、adapter 放 `adapter/task{N}/`、
   重跑 `build_router_assets.py` 即完成擴充（送審裁決另需在
   `assets/unit_descriptions.json` 補該任務所屬單位的說明）。

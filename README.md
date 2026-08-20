@@ -38,8 +38,10 @@ scripts/
   eval_baseline_*.py        Two baselines
   eval_outputs_llm_judge.py LLM scoring of batch outputs
   merge_pool150.py          Build one condition's artifact from local adapters
+  fetch_adapter_pool.py     Fetch the 150-adapter pool from Hugging Face
+  push_adapter_pool.py      Upload the adapter pool to Hugging Face
   fetch_artifact.py         Fetch artifacts from Hugging Face
-  push_artifact.py          Upload artifacts to a private Hugging Face repo
+  push_artifact.py          Upload artifacts to a Hugging Face repo
   migrate_artifact_manifest.py  Patch manifests written by older tooling
   verify_against_producer.py    Compare local builds against reference artifacts
   smoke_rejection_methods.py    Confirm every rejection method can serve, one by one
@@ -50,9 +52,10 @@ dataset/                    Data (not in git); create dataset/ with dataset/trai
                             and dataset/test_data/
   train_data/task{N}_train.json
   test_data/task{N}_test.json
-adapter/task{N}/            LoRA adapters (not in git): create adapter/ and put task{N}
-                            directly under it; if a task has several checkpoint-*/ dirs
-                            the latest is used automatically
+adapter/task{N}/            LoRA adapters (not in git): downloaded by setup_workspace.sh
+                            from Hugging Face. If you supply your own, put task{N}
+                            directly under adapter/; if a task has several checkpoint-*/
+                            dirs the latest is used automatically
 assets/                     Routing build outputs; unit_descriptions.json is the
                             hand-curated unit description book
 artifacts/                  Rejection-branch artifacts and registry.json (not in git)
@@ -83,9 +86,10 @@ docs/                       Architecture figures and documents
         python3 -m zipfile -e dataset/train_data/train_data.zip dataset/train_data/
         python3 -m zipfile -e dataset/test_data/test_data.zip  dataset/test_data/
      ```
-   - Adapters: one directory per task, placed as `adapter/task{N}/`; if the
-     archive unpacks with an extra wrapping directory, move the `task*` dirs
-     up to flatten it
+   - Adapters: nothing to do. Step 3 downloads the 150-adapter pool
+     (~2.7 GB) from Hugging Face. To supply your own instead, put one
+     directory per task as `adapter/task{N}/` and pass `--no-adapter-fetch`
+     in step 3.
 
 Important note: in this system the original OOD task149 is called task9149 to
 distinguish it from the ID task149. After the files are in place, please rename
@@ -100,6 +104,7 @@ the OOD task149 file to `task9149_test.json` manually.
    bash scripts/setup_workspace.sh                                          # base only
    bash scripts/setup_workspace.sh --artifacts fetch --hf-repo <org>/<repo> # also download artifacts
    bash scripts/setup_workspace.sh --artifacts merge                        # also build locally
+   bash scripts/setup_workspace.sh --no-adapter-fetch                       # adapters not from that repo
 ```
 
    `--artifacts` decides which rejection methods become available; without it
@@ -107,10 +112,23 @@ the OOD task149 file to `task9149_test.json` manually.
 
    The script automatically performs: file checks (missing items are reported
    explicitly), conda environment creation and dependency install (10–20 min
-   the first time), environment checkup, query-embedding computation and
-   routing-asset build (a few GPU minutes the first time). It ends with an
-   "all ready" message; if it stops midway, follow the hint and rerun —
-   completed steps are skipped automatically.
+   the first time), environment checkup, **adapter-pool verification**
+   (~2.7 GB on the first run), query-embedding computation and routing-asset
+   build (a few GPU minutes the first time). It ends with an "all ready"
+   message; if it stops midway, follow the hint and rerun — completed steps
+   are skipped automatically.
+
+   The pool comes from `Tincan0325/smoea-adapter-pool150`; `--adapter-repo`
+   points elsewhere. Every run checks each file against the sha256 recorded
+   in the pool manifest and downloads only what is missing or mismatched, so
+   an interrupted download is repaired by rerunning. `--no-adapter-fetch`
+   means "this pool is not from that repo, leave it alone" — use it when you
+   supply adapters of your own. To run the step on its own:
+
+```bash
+   python scripts/fetch_adapter_pool.py --repo Tincan0325/smoea-adapter-pool150 --list
+   python scripts/fetch_adapter_pool.py --repo Tincan0325/smoea-adapter-pool150
+```
 
 4. Interactive, one query at a time
 ```bash
@@ -146,6 +164,43 @@ the OOD task149 file to `task9149_test.json` manually.
 
 From then on, each new shell only needs `conda activate smoea`; steps 2 and 3
 are one-time work.
+
+## The Adapter Pool (pool150)
+
+One pool serves both halves of the system: the Router hot-swaps a single
+adapter per routed query, and the rejection branch merges the whole pool.
+
+| | |
+|---|---|
+| Adapters | 150 (`task0`–`task48`, `task50`–`task150`; slot 49 unassigned) |
+| Base model | `unsloth/Meta-Llama-3.1-8B` |
+| Rank (`r`) | 8, `lora_alpha` 16, `lora_dropout` 0.1 |
+| `target_modules` | `down_proj` only — no attention modules |
+| Per adapter | ~18 MiB (`adapter_model.safetensors`) |
+| Whole pool | ~2.64 GiB |
+
+The configuration above is identical across all 150; a pool with mixed LoRA
+settings cannot be merged and is rejected at load time.
+
+`scripts/fetch_adapter_pool.py` writes `adapter/pool150_manifest.json`
+alongside the adapters. That manifest is the ordered pool definition —
+**the order is by ascending task number and it affects merge results**, so
+merges built from it are reproducible.
+
+Distributing your own pool works the same way in reverse:
+
+```bash
+hf auth login
+python scripts/push_adapter_pool.py --repo <org>/<repo> --dry-run
+python scripts/push_adapter_pool.py --repo <org>/<repo>
+```
+
+Only `adapter_config.json` and `adapter_model.safetensors` are uploaded;
+training residue (optimizer state, RNG state, per-checkpoint tokenizer
+copies) is left behind — it is roughly half the size of a raw training
+output directory and neither serving nor merging reads it. The manifest is
+uploaded **last**, so a repo left behind by a failed upload has no manifest
+and the download side refuses it outright rather than handing out half a pool.
 
 ## The Router
 
@@ -344,7 +399,8 @@ python scripts/merge_pool150.py --method lorahub \
 
 Adapters are taken from `system.adapter_dir` in the config (the same value
 the Router uses), so no extra flag is needed; use `--adapter-dir` or
-`--manifest` only when the adapters live elsewhere.
+`--manifest` only when the adapters live elsewhere. A local build needs the
+complete pool of 150 — see "The Adapter Pool" above.
 
 Hyperparameters are sealed; users pick a method, not knobs. A build over the
 same adapter pool is never recomputed. An artifact's run id is the first 16
@@ -437,6 +493,9 @@ production time of the graded batch file.
   `system/merging.py`, `system/adamerging.py`, `system/lorahub.py`.
 - **Generation behavior** (prompt, decoding params, adapter resolution):
   `system/inference.py`.
+- **Adapter pool**: the contract (manifest parsing, LoRA loading, pool
+  fingerprint) is `system/adapter_pool.py`; the delivery channel is
+  `scripts/fetch_adapter_pool.py` / `scripts/push_adapter_pool.py`.
 - **Adding a task**: put samples in `dataset/`, the adapter in
   `adapter/task{N}/`, rerun `build_router_assets.py` — done (escalation
   adjudication additionally needs the task's unit description added to

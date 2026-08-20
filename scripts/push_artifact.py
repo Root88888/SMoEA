@@ -7,11 +7,12 @@
 
     <condition>/<run_id>/prepare/merged_model/{result.json,dense_delta.safetensors}
 
-**repo 一律建為私有。** dense delta 是 Llama-3.1-8B 的衍生物（只含 down_proj 的
-差值，不含 base model 本身），公開散布前必須先確認 Llama 3.1 Community License
-的附隨條款與上游資料授權——本腳本不提供轉為公開的選項。
+dense delta 是 Llama-3.1-8B 的衍生物（只含 down_proj 的差值，不含 base model
+本身）。散布時 model card 必須標示 Built with Llama、附 Llama 3.1 Community
+License 與 Acceptable Use Policy 連結——本腳本會把這三項寫進 card。
+`--private` 可改為私有 repo。
 
-  huggingface-cli login          # 先登入（或設 HF_TOKEN）
+  hf auth login                  # 先登入（或設 HF_TOKEN）
   python scripts/push_artifact.py --repo <org>/<repo> \
       --artifact /shared/artifacts/ties/<run_id>/prepare/merged_model
 """
@@ -37,6 +38,8 @@ tags:
 
 # SMoEA rejection artifacts
 
+Built with Llama.
+
 SMoEA Router 拒絕分支使用的 merged model artifact。每一份都是 `{base_model}`
 的 **dense delta**：只含 `down_proj` 的差值，**不含 base model 本身**——沒有
 base model 無法使用。
@@ -56,8 +59,11 @@ base model 無法使用。
 
 ## 授權
 
-衍生自 Llama 3.1，受 Llama 3.1 Community License 規範（Built with Llama）。
-散布前請確認附隨條款與上游訓練資料的授權。
+Built with Llama。衍生自 Llama 3.1，受
+[Llama 3.1 Community License](https://github.com/meta-llama/llama-models/blob/main/models/llama3_1/LICENSE)
+規範，並適用
+[Acceptable Use Policy](https://github.com/meta-llama/llama-models/blob/main/models/llama3_1/USE_POLICY.md)。
+訓練資料來自 Natural Instructions（Apache-2.0）。
 """
 
 
@@ -66,6 +72,8 @@ def main() -> None:
     parser.add_argument("--repo", required=True, help="目標 repo id（<org>/<name>）")
     parser.add_argument("--artifact", required=True, action="append",
                         help="要上傳的 merged_model 目錄；可重複指定")
+    parser.add_argument("--private", action="store_true",
+                        help="建為私有 repo；預設公開（見檔頭的授權說明）")
     parser.add_argument("--token", default=os.environ.get("HF_TOKEN"))
     parser.add_argument("--dry-run", action="store_true",
                         help="只驗證與列出將上傳的內容，不真的上傳")
@@ -87,7 +95,8 @@ def main() -> None:
         print(f"[push] 已驗證 {artifact.condition_id}:{artifact.run_id} "
               f"（{size / 1e9:.2f} GB）→ {remote}")
     total = sum(item[3] for item in planned)
-    print(f"[push] 合計 {total / 1e9:.2f} GB，目標 {args.repo}（私有）")
+    visibility = "私有" if args.private else "公開"
+    print(f"[push] 合計 {total / 1e9:.2f} GB，目標 {args.repo}（{visibility}）")
 
     if args.dry_run:
         print("[push] --dry-run：未上傳任何檔案")
@@ -98,10 +107,11 @@ def main() -> None:
     except Exception as exc:
         raise SystemExit(
             f"尚未登入 Hugging Face（{type(exc).__name__}）。"
-            "先執行 huggingface-cli login，或設定 HF_TOKEN。")
+            "先執行 hf auth login，或設定 HF_TOKEN。")
     print(f"[push] 身分：{who['name']}")
 
-    api.create_repo(args.repo, private=True, exist_ok=True, repo_type="model")
+    api.create_repo(args.repo, private=args.private, exist_ok=True,
+                    repo_type="model")
     base_model = planned[0][1].base_model_name
     api.upload_file(
         path_or_fileobj=CARD.format(
@@ -114,7 +124,7 @@ def main() -> None:
             folder_path=str(directory), path_in_repo=remote,
             repo_id=args.repo, token=args.token,
             commit_message=f"{artifact.condition_id}:{artifact.run_id}")
-    print(f"[push] 完成 → https://huggingface.co/{args.repo}（私有）")
+    print(f"[push] 完成 → https://huggingface.co/{args.repo}（{visibility}）")
 
 
 if __name__ == "__main__":
