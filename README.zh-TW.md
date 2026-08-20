@@ -1,7 +1,9 @@
 # SMoEA — Scalable Mixture-of-Experts Adapters
 
-一個服務系統：把每個請求路由到 150 個任務專用 LoRA adapter 的其中一個；
-沒有任何任務有把握對應時，改走可設定的 merging 分支。
+### 系統概覽
+- Router把每個query路由到150個任務專用LoRA adapter的其中一個
+- 若router對於query屬於哪個任務沒有把握而reject時，則改走merging 分支
+- merging分支分為動態和靜態，靜態支援直接載入現有權重（artifacts）、動態則是在infernce time即時merging。在下方Merging分支的地方會詳細說明
 
 [English version](README.md)
 
@@ -26,12 +28,8 @@ Router 只讀請求本身、不看答案，決定兩件事之一：
 
 ### Merging 分支
 
-Reject 之後的一切。所有 condition 共用同一個 **base model**
-（`unsloth/Meta-Llama-3.1-8B`），差別只在往上疊什麼。疊加不會改動 base model 本身，
-所以 condition 之間切換不需要重新載入它。
-
-> **`base` 與 base model 的差別。** base model 是 Llama-3.1-8B，每個 condition 都
-> 共用。`base` 是其中一個 condition 的名字，意思是「什麼都不疊」。
+Router Reject之後，會進入設定好的merging conditions(即不同的methods)，並且所有 condition共用同一個 **base model**
+（`unsloth/Meta-Llama-3.1-8B`）。
 
 #### Conditions
 
@@ -41,12 +39,12 @@ Reject 之後的一切。所有 condition 共用同一個 **base model**
 |---|---|---|---|
 | `base` | 什麼都不疊，直接由 base model 回答。不需要額外檔案。 | 可 | 不適用 |
 | `ta` | Task Arithmetic。把 150 個任務 adapter 平均成一組權重。 | 可 | 可 |
-| `pico_ta` | 在 Task Arithmetic 之前先做一層低秩處理。 | 可 | 可 |
+| `pico_ta` | 在 Task Arithmetic 之前先做一層低秩處理。 | 可 | 否 |
 | `ties_only` | 先把每個 adapter 修剪成數值最大的那部分座標，再逐座標選出方向，只保留與該方向一致的貢獻。名稱裡的 `only` 表示 TIES 之後沒有再接最佳化階段——用來與 `adamerging_pp` 區分。 | 可 | 可 |
 | `dare_ties_ta` | 隨機丟棄、放大補回、取號投票，再接 Task Arithmetic。封板的丟棄比例是 0，所以隨機那一階段實際上關閉了。 | 可 | 可 |
-| `lora_lego` | LoRA-Lego 的合併方式，把整個池的逐 rank 單元分群。 | 可 | 可 |
-| `adamerging_pp` | 以 TIES 當前處理，再對合併係數做最佳化。需要載入模型與訓練資料，不是純權重運算。 | 可 | 尚未 |
-| `lorahub` | LoRAHub。**只能當 benchmark 的受測對象** —— 它的係數是針對特定資料集與種子擬合出來的，沒有一組權重能對應任意的線上請求。 | **不可** | 尚未 |
+| `lora_lego` | LoRA-Lego 的合併方式。 | 可 | 否 |
+| `adamerging_pp` | 以 TIES 當前處理，再對合併係數做最佳化。 | 可 | 否 |
+| `lorahub` | LoRAHub。**只能當 benchmark 的受測對象** —— 它的係數是針對特定資料集與種子擬合出來的，沒有一組權重能對應任意的線上請求。 | **不可** | 否 |
 
 除了 `base` 之外，每個 baseline 各需要一個約 3.76 GB 的權重檔。
 
@@ -58,17 +56,14 @@ Reject 之後的一切。所有 condition 共用同一個 **base model**
 | `arrow` | 全部 150 個 adapter | 那 150 個 adapter，加一份事先算好的原型索引 |
 | `taskwise_k16_arrow` | 16 個群代表 | 16 個代表 adapter 與索引（約 275 MB） |
 
-`taskwise_k16_arrow` 事先把 150 個 adapter 分成 16 群、每群留一個代表。記憶體佔用比
-`arrow` 小很多，代價是路由粒度較粗。分群本身不由本系統執行，它只使用備好的資產。
-
 ### 執行期實際能選哪些
 
 引擎能服務四種型態：`base`、`artifact`、`arrow`、`taskwise_k16_arrow`。其中
 **`artifact` 是通用的** —— 任何合規的 `prepare/merged_model/` 目錄都能載入，不管它是
-哪種合併方法產生的。這就是為什麼上面每個 baseline 都走同一段程式。
+哪種合併方法產生的。（包括在本地生成的lorahub, adadmerging++, lego等）
 
 可選的項目宣告在一份**清單檔（registry）**裡，預設是 `artifacts/registry.json`。
-只有宣告過的項目才能選；系統不掃描目錄，也不會自己挑「最新的 run」。
+只有宣告過的項目才能選。
 
 ### 目錄架構
 
@@ -125,7 +120,7 @@ results/                    批次輸出與評測結果
 docs/                       架構圖、交付說明書、架構決策紀錄
 ```
 
-**Artifact** 指的是一個目錄，裡面放一組可直接服務的權重，加上一份 `result.json` 契約
+**Artifact** 指的是一個目錄，裡面放一組權重，加上一份 `result.json` 契約
 ——記錄 base model 指紋、dtype、檔案大小與雜湊值，以及它由哪一批 adapter 產生。它的
 `run_id` 取權重檔本身 SHA-256 的前 16 碼，所以**編號相同就保證內容相同**。
 
@@ -141,21 +136,18 @@ Clone 之後，手動放三樣東西：
 | LoRA adapters | `adapter/task{N}/` | 路由與本機合併 |
 | 測試資料 | `dataset/test_data/task{N}_test.json` | 只有批次評測需要 |
 
-然後執行一次前置：
+然後執行一次前置，可以選擇需不需要下載權重＆本地生成靜態權重。
 
 ```bash
 bash scripts/setup_workspace.sh                                            # 只有 base
-bash scripts/setup_workspace.sh --artifacts fetch --hf-repo <org>/<repo>   # 下載
-bash scripts/setup_workspace.sh --artifacts merge                          # 本機建置
+bash scripts/setup_workspace.sh --artifacts fetch --hf-repo <org>/<repo>   # 下載權重
+bash scripts/setup_workspace.sh --artifacts merge                          # 本地生成靜態權重
 ```
-
-這一步會建立 conda 環境、安裝鎖定的依賴、跑環境體檢、計算查詢嵌入、建置路由資產；
-有給 `--artifacts` 時，還會把 merging 分支的權重檔準備到 `artifacts/`。
 
 | 參數 | 意思 |
 |---|---|
 | `--artifacts fetch` | 從 Hugging Face repo 下載備好的 artifact |
-| `--artifacts merge` | 用本機的 adapter 建置較快的三個（`ta`、`ties_only`、`dare_ties_ta`）；其他用 `--methods` 指定 |
+| `--artifacts merge` | 用本機的 adapter 建置 `ta`、`ties_only`、`dare_ties_ta` |
 | `--hf-repo <org>/<repo>` | 來源 repo，搭配 `fetch` 使用時必填 |
 | `--artifact-root <路徑>` | artifact 落地位置（預設 `artifacts/`） |
 | `--methods ta,ties_only` | 限定要準備哪幾個 condition |
@@ -292,7 +284,7 @@ python scripts/merge_pool150.py --method ties_only --adapter-dir adapter
 
 | 參數 | 意思 |
 |---|---|
-| `--method {ta,ties_only,dare_ties_ta,pico_ta,lora_lego}` | 要建置哪一個 condition |
+| `--method {ta,ties_only,dare_ties_ta}` | 要建置哪一個 condition |
 | `--adapter-dir adapter` | 由 `adapter/task{N}/` 慣例推導有序清單 |
 | `--manifest <檔案>` | 改用明確指定的有序清單 |
 | `--device cpu` | 用 CPU 計算（預設 `cuda`） |
@@ -304,8 +296,8 @@ python scripts/merge_pool150.py --method ties_only --adapter-dir adapter
 7.5 GB 顯示記憶體，不用 `--device cpu` 的話顯卡至少要 12 GB。這是一次性成本，回答
 請求時不會再做這件事。
 
-同一批 adapter 已經建置過就不會重算。`adamerging_pp` 與 `lorahub` 目前還不能在這裡
-建置：兩者都需要載入模型、對資料做最佳化，性質與權重運算不同。
+同一批 adapter 已經建置過就不會重算。`pico_ta`、`lora_lego`、`adamerging_pp` 無法在
+這裡建置 —— 它們只接受備好的 artifact。
 
 ---
 
