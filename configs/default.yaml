@@ -10,7 +10,7 @@ paths:
 
 data:
   field: input                    # 上游相容欄位；routing_text=input 時使用
-  routing_text: answer_free_full_prompt # 交付預設；input 可重現上游短文字 router
+  routing_text: input             # 交付預設；input 可重現上游短文字 router
   doc_clip_chars: 3000            # 文本截斷長度（TF-IDF / BM25 / 裁決 prompt 共用）
 
 embedding:
