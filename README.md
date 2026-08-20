@@ -313,8 +313,7 @@ python scripts/migrate_artifact_manifest.py --scan <權重檔目錄>
 python scripts/smoke_rejection_methods.py --set system.dtype=bfloat16
 ```
 
-逐一啟用清單檔裡的每個 condition、各生成一次、給總結表。**跳過 Router**，所以不受
-路由資產設定影響。`--only base,ties_only` 只測其中幾個。
+逐一啟用清單檔裡的每個 condition、各生成一次、給總結表。**跳過 Router**，所以不受路由資產設定影響。`--only base,ties_only` 只測其中幾個。
 
 ## Benchmark：跳過 Router，只測某一個方法
 
