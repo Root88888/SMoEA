@@ -40,7 +40,13 @@ from system.merged_model import (  # noqa: E402
     resolve_base_model_identity,
     write_dense_delta_artifact,
 )
-from system.merging import CANONICAL_SEED, MERGE_METHODS, SEALED, merge_pool  # noqa: E402  # noqa: F401
+from system.merging import (  # noqa: E402  # noqa: F401
+    CANONICAL_SEED,
+    MERGE_METHODS,
+    SEALED,
+    merge_pool,
+    merge_pool_adamerging,
+)
 from system.registry import load_registry  # noqa: E402
 
 
@@ -87,7 +93,11 @@ def register(registry_path, entry_id, artifact_dir, description,
 
 def main() -> None:
     parser = add_config_args(argparse.ArgumentParser())
-    parser.add_argument("--method", required=True, choices=list(MERGE_METHODS))
+    parser.add_argument("--method", required=True,
+                        choices=list(MERGE_METHODS) + ["adamerging_pp"])
+    parser.add_argument("--train-root", default=None,
+                        help="adamerging_pp 的校準資料來源；預設 "
+                             "<dataset_dir>/train_data")
     parser.add_argument("--manifest", default=None,
                         help="pool150 的有序 adapter manifest")
     parser.add_argument("--adapter-dir", default=None,
@@ -161,8 +171,25 @@ def main() -> None:
     os.makedirs(staging, exist_ok=True)
     staged_delta = os.path.join(staging, "dense_delta.safetensors")
     started = time.time()
-    report = merge_pool(args.method, pool, staged_delta, device=args.device,
-                        output_dtype=getattr(torch, dtype), progress=True)
+    if args.method == "adamerging_pp":
+        # 兩階段：先學逐層係數（需要 GPU 與校準資料），再走 TIES 合成。
+        from system.adamerging import SEALED_ADAMERGING, optimize_coefficients
+        train_root = args.train_root or os.path.join(
+            cfg["paths"]["dataset_dir"], "train_data")
+        learned, opt_summary = optimize_coefficients(
+            pool, train_root, os.path.join(staging, "optimization"),
+            seed=CANONICAL_SEED, device=args.device)
+        report = merge_pool_adamerging(
+            pool, staged_delta, learned, device=args.device,
+            output_dtype=getattr(torch, dtype), progress=True,
+            density=SEALED_ADAMERGING["ties"]["density"],
+            tile_rows=SEALED_ADAMERGING["ties"]["tile_rows"],
+            reduction=SEALED_ADAMERGING["ties"]["reduction"])
+        report["optimization"] = {
+            key: value for key, value in opt_summary.items() if key != "sealed"}
+    else:
+        report = merge_pool(args.method, pool, staged_delta, device=args.device,
+                            output_dtype=getattr(torch, dtype), progress=True)
     print(f"[merge] 權重合成完成（{time.time() - started:.0f}s，"
           f"{report['output_bytes'] / 1e9:.2f} GB）", flush=True)
 
@@ -172,9 +199,8 @@ def main() -> None:
     os.makedirs(artifact_dir, exist_ok=True)
     delta_path = os.path.join(artifact_dir, "dense_delta.safetensors")
     os.replace(staged_delta, delta_path)
-    for leftover in os.listdir(staging):
-        os.remove(os.path.join(staging, leftover))
-    os.rmdir(staging)
+    import shutil
+    shutil.rmtree(staging, ignore_errors=True)
     print(f"[merge] run_id={run_id}（取自檔案雜湊）→ {artifact_dir}", flush=True)
 
     base = resolve_base_model_identity(cfg["system"]["base_model"])

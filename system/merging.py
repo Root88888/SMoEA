@@ -172,11 +172,20 @@ def materialize_ties(pool, output_path, *, thresholds, coefficients, tile_rows,
         coefficients, dtype=torch.float32, device=compute_device)
     if tuple(threshold_tensor.shape) != (task_count,):
         raise ValueError(f"預期 {task_count} 個門檻")
-    if tuple(coefficient_tensor.shape) != (task_count,):
-        raise ValueError(f"預期 {task_count} 個係數")
+    # 係數可以是全域的 [tasks]（ties_only 用固定 lambda），也可以是逐層的
+    # [layers, tasks]（adamerging_pp 用學出來的係數）。
+    if coefficient_tensor.ndim == 1:
+        if tuple(coefficient_tensor.shape) != (task_count,):
+            raise ValueError(f"預期 {task_count} 個係數")
+    elif coefficient_tensor.ndim == 2:
+        if tuple(coefficient_tensor.shape) != (len(pool.a_keys), task_count):
+            raise ValueError(
+                f"預期逐層係數 [{len(pool.a_keys)}, {task_count}]")
+    else:
+        raise ValueError("係數必須是全域 [tasks] 或逐層 [layers, tasks]")
 
     tensors, reports = {}, []
-    for a_key in pool.a_keys:
+    for module_order, a_key in enumerate(pool.a_keys):
         a_stack, b_stack = _stacks(pool, a_key, compute_device, torch)
         out_features, in_features = b_stack.shape[1], a_stack.shape[2]
         output = torch.empty((out_features, in_features),
@@ -186,8 +195,12 @@ def materialize_ties(pool, output_path, *, thresholds, coefficients, tile_rows,
         for start in range(0, out_features, tile_rows):
             end = min(out_features, start + tile_rows)
             vectors = torch.bmm(b_stack[:, start:end], a_stack).mul_(pool.scaling)
+            module_coefficients = (
+                coefficient_tensor if coefficient_tensor.ndim == 1
+                else coefficient_tensor[module_order])
             merged, tile_stats = trim_elect_weighted_sum(
-                vectors, threshold_tensor, coefficient_tensor, reduction=reduction)
+                vectors, threshold_tensor, module_coefficients,
+                reduction=reduction)
             output[start:end].copy_(merged.to(output_dtype).cpu())
             for key, value in tile_stats.items():
                 stats[key] += value
@@ -202,7 +215,10 @@ def materialize_ties(pool, output_path, *, thresholds, coefficients, tile_rows,
             torch.cuda.empty_cache()
     return _save(tensors, output_path,
                  f"global_trim_total_sign_{reduction}_exact_dense",
-                 {"reduction": reduction, "module_reports": reports})
+                 {"reduction": reduction,
+                  "coefficient_scope": ("global" if coefficient_tensor.ndim == 1
+                                        else "layer_wise"),
+                  "module_reports": reports})
 
 
 # ---------------------------------------------------------------------------
@@ -528,6 +544,27 @@ def _save(tensors, output_path, method, extra):
             "output_path": str(destination),
             "output_bytes": destination.stat().st_size,
             "output_sha256": sha256(destination), **extra}
+
+
+def merge_pool_adamerging(pool, output_path, learned_coefficients, *,
+                          device="cpu", output_dtype=None, progress=False,
+                          density=0.2, tile_rows=16, reduction="disjoint_mean"):
+    """用已學到的逐層係數走 TIES 合成（adamerging_pp 的第二階段）。
+
+    第一階段的係數最佳化在 system/adamerging.py；這裡只負責把係數變成權重，
+    用的是與 ties_only 完全相同、已對 producer 驗證過的合成路徑。
+    """
+    import torch
+
+    thresholds = compute_global_thresholds(
+        pool, density, torch.device(device), progress=progress)
+    report = materialize_ties(
+        pool, output_path, thresholds=thresholds,
+        coefficients=learned_coefficients, tile_rows=tile_rows,
+        reduction=reduction, device=device, output_dtype=output_dtype)
+    report["method"] = "adamerging_pp"
+    report["density"] = float(density)
+    return report
 
 
 def merge_pool(method, pool, output_path, *, device="cpu", output_dtype=None,
