@@ -1,399 +1,408 @@
 # SMoEA — Scalable Mixture-of-Experts Adapters
 
-![architecture](docs/architecture.jpg)
+A serving system that routes each request to one of 150 task-specific LoRA adapters,
+and falls back to a configurable merging branch when no task is a confident match.
 
-完整的 rejection runtime、外部 assets、benchmark 操作指令與目前驗收
-範圍，見 [`docs/DELIVERY_ARCHITECTURE_RUNBOOK.md`](docs/DELIVERY_ARCHITECTURE_RUNBOOK.md)。
-
-## 這個系統在做什麼
-
-收到一段文字請求後，SMoEA 先判斷「這是不是我學過的任務」：
-
-- 認得 → 交給那個任務專用的小型權重檔（adapter）來回答。
-- 不認得 → 走「拒絕分支」，改用另一組權重回答。
-
-負責判斷的那一層叫 Router。它只看請求本身、不看答案，結果分成四種：直接路由、
-一般路由、送第二個模型複判、直接拒絕。前三種有機會命中某個任務，最後一種一定
-進拒絕分支。複判沒通過的也會進拒絕分支。
-
-拒絕分支要用哪一組權重，由你指定。可選的方法分成兩類：baselines 與 arrow routing。
-
-### 拒絕之後可以用哪些方法
-
-先分清楚兩個詞：
-
-- **底層模型**（base model）＝ Llama-3.1-8B。**所有方法都共用這一個**，沒有例外。
-- **`base`** 是其中一種方法的名字，意思是「不在底層模型上疊任何東西」。
-
-各方法的差別只在往底層模型上疊什麼。疊加不會改動底層模型本身，所以互相切換不需要
-重新載入模型。方法分成兩類：
-
-#### 一、Baselines
-
-權重在開始回答之前就固定了。同樣的輸入會得到同樣的輸出。
-
-| 名稱 | 實際做的事 |
-|---|---|
-| `base` | 不疊任何東西，直接用底層模型回答。不需要額外檔案，是預設值。 |
-| `ta` | Task Arithmetic。把 150 個任務 adapter 直接平均成一組權重，所有任務的調整混在一起，不做取捨。 |
-| `pico_ta` | 在 Task Arithmetic 之前先做一層低秩處理再合併。 |
-| `ties_only` | 先丟掉每個 adapter 裡數值偏小的部分（只留最大的兩成），再讓剩下的部分投票決定每個位置該往哪個方向調整，方向和多數不一致的就不採用，最後整體縮到約三成。目的是減少不同任務互相拉扯。名稱裡的 only 表示**只做 TIES、後面沒有再接最佳化**，用來和 `adamerging_pp` 區分。 |
-| `dare_ties_ta` | 流程是「隨機丟掉一部分數值 → 把剩下的放大補回總量 → 投票 → 接 Task Arithmetic」。交付設定的丟棄比例是 0，也就是隨機丟棄實際上關閉了，所以真正在做的是「全部保留 → 投票 → 整體縮小到四分之一」。它沒有 `ties_only` 那個「只留最大兩成」的步驟。 |
-| `lora_lego` | LoRA-Lego 的合併方式。 |
-| `adamerging_pp` | 以 TIES 當前處理，再對合併係數做最佳化。需要事先最佳化好的權重檔。 |
-
-以上除了 `base` 之外，每一種各需要一個約 3.76 GB 的權重檔（見〈準備拒絕分支要用的檔案〉）。
-`base` 不需要任何額外檔案。
-
-其中 `ta`、`ties_only`、`dare_ties_ta` **可以用本機的 adapter 自己算**；其餘只接受事先
-備好的權重檔。另有一個 `lorahub`，它的設定綁定特定資料集與隨機種子，沒有通用的線上
-狀態，因此只用於 benchmark，不列入拒絕分支的選項。
-
-#### 二、Arrow routing（兩種變體）
-
-不預先混合權重。回答時逐個 token（大致是一個字或詞的片段）判斷「這一段最接近哪個
-任務」，當場只套用那一個 adapter。同一句話裡不同位置可能用到不同 adapter，32 層也
-各自判斷。**每個請求走的路徑都不一樣。**
-
-兩種變體的差別只在候選有幾個：
-
-| 名稱 | 候選數 | 需要的檔案 |
-|---|---|---|
-| `arrow` | 150 個 adapter 全部 | 那 150 個 adapter 本身，加一份事先算好的索引檔 |
-| `taskwise_k16_arrow` | 16 個代表 | 16 個代表 adapter 與索引檔（約 275 MB） |
-
-（`arrow` 也常稱作 Direct Arrow，「direct」是相對於 `taskwise_k16_arrow` 的分群版本。）
-
-`taskwise_k16_arrow` 是先把 150 個 adapter 分成 16 群、每群選一個代表，記憶體佔用小很多，
-代價是判斷的粒度較粗。哪 16 個當代表是離線分群決定的，本系統不做分群，只讀現成的。
+[繁體中文版](README.zh-TW.md)
 
 ---
 
-不指定的話就是 `base`。系統不會自己去找或下載任何東西——沒準備就是沒有，
-不會靜悄悄改用別的。
+## Architecture
 
-## 目錄結構
+![architecture](docs/architecture.jpg)
+
+### Router
+
+The Router reads the request text only — never the answer — and decides one of two
+things:
+
+- **Accept** — the request matches a known task. It is handed to that task's adapter
+  under `adapter/task{N}/`.
+- **Reject** — no task is a confident match. The request goes to the **merging branch**.
+
+Internally the decision falls into four zones: direct routing, green-zone routing,
+escalation to a second model, and red-zone rejection. The first three can produce an
+accept; red-zone always rejects, and an escalation that fails to clear its threshold
+rejects as well.
+
+Router assets are built offline by `scripts/build_router_assets.py` and live in
+`assets/`.
+
+### Merging branch
+
+Everything past a Reject. All conditions share the same **base model**
+(`unsloth/Meta-Llama-3.1-8B`); they differ only in what is layered on top of it.
+Layering never mutates the base model, so switching between conditions does not
+reload it.
+
+> **`base` vs base model.** The base model is Llama-3.1-8B, shared by every
+> condition. `base` is the name of one condition, meaning "layer nothing on top".
+
+#### Conditions
+
+**Baselines** — weights are fixed before generation starts. Same input, same output.
+
+| `condition_id` | What it does | Online rejection | Can be built locally |
+|---|---|---|---|
+| `base` | Nothing layered on top; the base model answers directly. Needs no extra files. | yes | n/a |
+| `ta` | Task Arithmetic. Averages all 150 task adapters into one set of weights. | yes | yes |
+| `pico_ta` | A low-rank pre-step before Task Arithmetic. | yes | no |
+| `ties_only` | Trims each adapter to its largest-magnitude coordinates, elects a sign per coordinate, and keeps only the contributions that agree. `only` means TIES with no optimisation stage on top — as opposed to `adamerging_pp`. | yes | yes |
+| `dare_ties_ta` | Random drop, rescale, sign election, then Task Arithmetic. The sealed drop rate is 0, so the random stage is effectively disabled. | yes | yes |
+| `lora_lego` | LoRA-Lego merging. | yes | no |
+| `adamerging_pp` | TIES as a pre-step, then optimisation of the merge coefficients. | yes | no |
+| `lorahub` | LoRAHub. **Benchmark subject only** — its coefficients are fitted against a specific dataset and seed, so there is no single set of weights valid for arbitrary online requests. | **no** | no |
+
+Each baseline except `base` needs one weight file of roughly 3.76 GB.
+
+**Arrow routing** — weights are not merged ahead of time. During generation, each
+token is matched against per-expert prototypes and only the closest expert is applied,
+independently at every layer. **Different requests take different paths.**
+
+| `condition_id` | Candidates | Files needed |
+|---|---|---|
+| `arrow` | all 150 adapters | the 150 adapters plus a prepared prototype index |
+| `taskwise_k16_arrow` | 16 cluster representatives | 16 representative adapters plus the index (~275 MB) |
+
+`taskwise_k16_arrow` clusters the 150 adapters into 16 groups offline and keeps one
+representative per group. It uses far less memory than `arrow` at a coarser routing
+granularity. The clustering itself is not performed by this system; it consumes the
+prepared assets.
+
+### Which conditions are selectable at runtime
+
+The engine serves four shapes: `base`, `artifact`, `arrow` and `taskwise_k16_arrow`.
+`artifact` is generic — it loads any conforming `prepare/merged_model/` directory,
+regardless of which merging method produced it. That is why every baseline above is
+served through the same code path.
+
+Selectable entries are declared in a **registry** (`artifacts/registry.json` by
+default). Only declared entries can be selected; the system never scans directories
+and never picks "the latest run" on its own.
+
+### Directory layout
 
 ```
-main.py                     系統入口：interactive / batch 兩模式
-configs/default.yaml        全部設定唯一定義處（路徑、門檻、模型、生成參數；任何設定可用 --set key=value 臨時覆蓋）
-router/                     路由決策層
-  core.py                   Router 類別：build / save / load / decide / escalate / finalize——路由邏輯唯一所在
-  config.py data_io.py      設定載入、資料與嵌入快取 I/O
-  embedding.py              查詢嵌入（bge）
-  fingerprint.py units.py   任務指紋、多質心、路由單位
-  lexical.py conformal.py   詞彙一致性訊號、共形校準與四區判定
-  verifier.py               送審 LLM 是非題裁決
-  metrics.py                評測計分
-system/                     路由之後的執行層
-  inference.py              InferenceEngine：base model 常駐、per-task adapter 熱切換、生成
-  merged_model.py           delivery artifact 驗證、exact dense delta 非破壞切換
-  arrow_runtime.py          Direct Arrow／Taskwise-K16 assets 驗證與動態 token routing
-  rejection.py              拒絕分支：統一啟用 base、artifact 或 Arrow
-  benchmark.py              15-OOD loader 與本地評分，共用 production rejection runtime
+main.py                     Entry point: interactive and batch modes
+configs/default.yaml        Single source of truth for every setting; override one
+                            key at a time with --set key=value
+
+router/                     Routing decision layer
+  core.py                     Router class: build / save / load / decide / escalate /
+                              finalize — the only place routing logic lives
+  config.py data_io.py        Config loading, dataset and embedding-cache I/O
+  embedding.py                Query embedding (bge)
+  fingerprint.py units.py     Task fingerprints, multi-centroid, routing units
+  lexical.py conformal.py     Lexical-agreement signal, conformal calibration, zones
+  verifier.py                 Escalation judge (yes/no questions to a second LLM)
+  metrics.py                  Scoring for evaluation
+
+system/                     Execution layer, everything after the routing decision
+  inference.py                InferenceEngine: resident base model, per-task adapter
+                              hot-swap, generation, rejection-condition selection
+  registry.py                 Artifact registry: parses and validates the declared
+                              list of selectable conditions
+  rejection.py                The single entry point into the merging branch, shared
+                              by interactive, batch and benchmark
+  merged_model.py             The merged-model contract: writer and validator live
+                              together so they cannot drift apart
+  adapter_pool.py             pool150 manifest parsing, LoRA loading, pool fingerprint
+  merging.py                  Local merging for ta / ties_only / dare_ties_ta with
+                              sealed hyperparameters
+  arrow_runtime.py            Arrow and Taskwise-K16 asset validation and token routing
+  benchmark.py                15-OOD loader and local scoring
+
 scripts/
-  check_env.py              環境體檢
-  selftest_*.py             三支自測（零資料零 GPU）
-  build_router_assets.py    路由資產離線建置（掃 dataset 自動推導任務集合）
-  eval_router.py            路由評測三段
-  eval_baseline_*.py        兩支 baseline
-  run_rejection_benchmark.py 直接測試 rejection method 的固定 15-OOD benchmark
-  verify_flow_table.py      評測結果獨立重放驗證
-  plot_centroids.py         質心結構圖
-dataset/                    資料（不進 git）
-  train_data/task{N}_train.json    線上 router 建置需要
-  test_data/task{N}_test.json      批次評測才需要
-  ood_test_data/task149_test.json  批次評測用的原始 OOD task149
-adapter/task{N}/            LoRA adapters（不進 git）：請建立 adapter 目錄，將 task{N} 直接放在 adapter/ 下，task 內如有多個 checkpoint-*/ 自動取最新
-<external>/merged_model/    靜態 merging condition 的 serving artifact（不進 git）
-<external>/arrow/prepare/   Arrow prototypes／Taskwise 代表 adapters（不進 git）
-assets/                     路由建置產物；unit_descriptions.json 為人工校訂的單位說明書
-results/                    評測與批次輸出
-docs/                       架構圖與文件
+  setup_workspace.sh          One-shot setup: environment, router assets, artifacts
+  check_env.py                Environment health check
+  build_router_assets.py      Offline router asset build
+  selftest_*.py               Three self-tests, no GPU and no real data required
+  merge_pool150.py            Build an artifact locally from the 150 adapters
+  fetch_artifact.py           Download an artifact from a Hugging Face repo
+  push_artifact.py            Upload an artifact to a private Hugging Face repo
+  migrate_artifact_manifest.py  Repair manifests written by older producer versions
+  verify_against_producer.py  Check a locally built artifact against a reference one
+  rename_remote_condition.py  Rename conditions in a remote repo, server-side
+  run_rejection_benchmark.py  Fixed 15-OOD benchmark, Router bypassed
+  eval_router.py              Router evaluation, three stages
+  eval_baseline_*.py          Two routing baselines
+  eval_outputs_llm_judge.py   LLM-as-a-judge scoring of batch outputs
+  verify_flow_table.py        Independent replay of evaluation results
+
+adapter/task{N}/            LoRA adapters (not in git)
+dataset/                    Datasets (not in git)
+  train_data/task{N}_train.json     required to build router assets
+  test_data/task{N}_test.json       required for batch evaluation
+  ood_test_data/task149_test.json   the original OOD task149
+assets/                     Router build output; unit_descriptions.json is hand-checked
+artifacts/                  Merging-branch weight files and registry.json (not in git)
+results/                    Batch outputs and evaluation results
+docs/                       Architecture diagram, delivery runbook, ADRs
 ```
 
-## 上手流程
+**Artifact** means a directory holding one set of ready-to-serve weights plus a
+`result.json` contract recording the base model fingerprint, dtype, file sizes and
+checksums, and the adapter pool it was derived from. Its `run_id` is the first 16
+characters of the weight file's own SHA-256, so an identical `run_id` guarantees
+identical content.
 
-1. git clone
-```bash
-   git clone https://github.com/Root88888/SMoEA.git && cd SMoEA
-```
- 
-2. 放置檔案（手動步驟）
-   - Router 訓練樣本：放到 `dataset/train_data/`，檔名
-     `task{N}_train.json`。互動與線上服務建置只需要這一份資料
-   - 批次評測資料：要跑 benchmark 時才放到 `dataset/test_data/`，檔名
-     `task{N}_test.json`
+---
 
-     上游資料可用以下指令下載；只跑互動／線上服務時可略過 test data：
+## Setup
 
-     ```bash
-     pip install gdown
-     mkdir -p dataset/train_data dataset/test_data
+Clone the repository, then place three things by hand:
 
-     gdown 1AsJwaqQ3AXmPT8TpAxOyvCPbyHtCi1lG -O dataset/train_data/train_data.zip
-     gdown 1aiT9r9v2tyH-0cdf_F6zhfEvYF0mZ2tM -O dataset/test_data/test_data.zip
+| What | Where | Needed for |
+|---|---|---|
+| Router training samples | `dataset/train_data/task{N}_train.json` | building router assets |
+| LoRA adapters | `adapter/task{N}/` | routing and local merging |
+| Test data | `dataset/test_data/task{N}_test.json` | batch evaluation only |
 
-     python3 -m zipfile -e dataset/train_data/train_data.zip dataset/train_data/
-     python3 -m zipfile -e dataset/test_data/test_data.zip dataset/test_data/
-     ```
-   - adapters：每任務一個目錄，放成 `adapter/task{N}/`；解壓後若外層
-     多包一層目錄，將其中的 `task*` 移出攤平
-   - OOD Natural Instructions `task149`：保留原始檔名，放到
-     `dataset/ood_test_data/task149_test.json`；source Adapter Slot `task149`
-     的測試檔仍可留在 `dataset/test_data/task149_test.json`
-   - rejection method 所需檔案：artifact 方法提供完整 `prepare/merged_model/`；
-     Arrow 提供 ordered adapter manifest，並可另提供 `prepare/` routing assets
-
-要跑完整 benchmark 時，先執行
-`python scripts/map_ood_aliases.py --dataset-dir dataset`，為 OOD `task149`
-建立內部 `task9149` symlink，不需手動改名。Batch output 的 `source_task`
-仍是原始 `task149`，並另以 `internal_task_id: task9149` 保留除錯資訊。
-
-3. 一鍵建置
-   
-   已在 dataset/ood_tasks.txt 定義 OOD 任務有哪些，如果編號方式不同請修改
+Then run setup once:
 
 ```bash
-   bash scripts/setup_workspace.sh                       # 拒絕分支只有 base
-   bash scripts/setup_workspace.sh --artifacts merge     # 另以本機 adapter 合成
-   bash scripts/setup_workspace.sh --artifacts fetch --hf-repo <org>/<repo>
+bash scripts/setup_workspace.sh                                            # base only
+bash scripts/setup_workspace.sh --artifacts fetch --hf-repo <org>/<repo>   # download
+bash scripts/setup_workspace.sh --artifacts merge                          # build locally
 ```
 
-   拒絕分支要用的檔案在這一步準備好，不是等到真的拒絕時才去拿——服務執行中
-   不會對外連線。`--artifacts merge` 以 `adapter/` 線上合成
-   `ta`、`ties_only`、`dare_ties_ta`（每份約 3.76 GB，已存在者自動跳過）；
-   `--artifacts fetch` 改為自 Hugging Face repo 取得現成的。兩者都會登記進
-   `<artifact-root>/registry.json`，執行期以 id 選用。不加這個參數時拒絕分支
-   只有 base，之後隨時可以單獨補跑。
+Setup builds the conda environment, installs pinned dependencies, runs the health
+check, computes query embeddings, builds router assets, and — when `--artifacts` is
+given — prepares the merging-branch weight files under `artifacts/`.
 
-   setup 預設建立互動／線上服務需要的 router 資產，不要求 benchmark
-   test data。它會自動完成：檔案檢查（缺漏會明確提示）、conda 環境建置與依賴安裝
-   （首次 10-20 分鐘）、環境體檢、查詢嵌入計算與路由資產建置
-   （首次 GPU 數分鐘）。結尾印出「全部就緒」即完成；中途停止時
-   依提示處理後重跑即可（已完成步驟自動跳過）。
-   
-4. 單筆執行互動
-```bash
-   conda activate smoea
-   python main.py --mode interactive
-```
+| Flag | Meaning |
+|---|---|
+| `--artifacts fetch` | Download prepared artifacts from a Hugging Face repo |
+| `--artifacts merge` | Build `ta`, `ties_only` and `dare_ties_ta` from the local adapters |
+| `--hf-repo <org>/<repo>` | Source repository, required with `fetch` |
+| `--artifact-root <path>` | Where artifacts land (default: `artifacts/`) |
+| `--methods ta,ties_only` | Restrict which conditions to prepare |
 
-   首次執行自動下載生成與裁決模型（各約 16GB）。請輸入完整任務要求與內容
-   （相當於不含答案的 `full_prompt`）。多行內容先輸入 `:paste`，貼完後以
-   單獨一行 `:send` 送出。應看到 Router 判定與模型回答；
-   輸入無關文字應看到進入 rejection inference。預設 `base`；使用 merged
-   artifact 時明確指定：
+Without `--artifacts` the merging branch offers only `base`; you can add the rest
+later with `merge_pool150.py` or `fetch_artifact.py`.
 
-```bash
-   python main.py --mode interactive \
-     --set system.rejection_method=artifact \
-     --set system.rejection_artifact_dir=/shared/run/prepare/merged_model \
-     --set system.dtype=bfloat16
-```
+The base model and the escalation judge (~16 GB each) download automatically the
+first time `main.py` runs.
 
-`artifact` 路徑未設定、schema 不符、base model 不同、檔案大小或 checksum
-錯誤都會在接受輸入前停止，不會偷偷改用 base model。
+Re-running setup is safe: completed steps are skipped.
 
-   其他方法怎麼準備、怎麼在執行中切換，見下方〈準備拒絕分支要用的檔案〉。
+---
 
-5. 批次評測
+## Inference
 
-   批次模式另外需要完整 `dataset/test_data/`。若資料尚未備齊，互動模式
-   仍可正常使用，但不要把部分 test data 的結果當成完整 benchmark。
+### Interactive mode
 
 ```bash
-   python main.py --mode batch          # --tasks a,b 只跑任務a,b、--limit n 每個任務test set只取前n筆，這些沒加就是全跑
+conda activate smoea
+python main.py --mode interactive
 ```
- 
-   路由命中使用 task adapter；router 拒絕則按 batch 集中使用 selected rejection
-   method，不再寫 `output=null`。逐筆結果（含 Router 診斷、實際 model source、
-   condition/run identity 與模型輸出）落於
-   `results/main_batch_outputs.jsonl`。
- 
-之後每次開機僅需 `conda activate smoea`；步驟 2、3 為一次性作業。
 
-互動模式輸出範例：
+No path arguments are needed — the registry defaults to `artifacts/registry.json`.
+
+| Flag | Meaning |
+|---|---|
+| `--set system.dtype=bfloat16` | Generation dtype; must match the artifact's declared dtype |
+| `--set system.rejection_method=<id>` | Condition to use when no registry is present |
+| `--set system.verifier_mode=<mode>` | Escalation judge: `resident_4bit` (default, judge resident in 4-bit alongside the generator), `swap` (load and unload in turn — slower, matches the sealed evaluation), `off` (no judge; every escalation rejects) |
+| `--no_preload` | Delay model loading until the first request |
+
+In-session commands:
+
+| Command | Effect |
+|---|---|
+| `:rejection` | Show the condition currently in effect |
+| `:rejection list` | List registry entries; `*` marks the active one |
+| `:rejection use <id>` | Switch condition. The base model is not reloaded |
+| `:paste` … `:send` | Enter a multi-line request |
+| `exit` | Leave |
+
+Switching validates the new condition in full — schema, base model fingerprint,
+dtype, file size and checksum — **before** it takes effect. If validation fails the
+current condition stays in place; the system never silently falls back to `base`.
+
+Example session. **The program prints in Traditional Chinese**; the annotations
+below are for readers of this document only.
 
 ```text
-> <完整任務要求與內容，不含答案>
-[Router] margin=0.183  p=0.42  詞彙一致✓
+[Router] 資產已載：150 任務、N 路由單位          ← assets loaded
+拒絕分支目前使用 base；:rejection list 看可選項目  ← current condition
+
+> <a complete task instruction and its input, without the answer>
+[Router] margin=0.183  p=0.42  詞彙一致✓         ← margin / p-value / lexical agreement
 [Router] top-3：task23(sim 0.87)  task10(sim 0.71)  task24(sim 0.66)
-[Router] 判定：綠區路由 → task23
-[Output] <模型輸出>
+[Router] 判定：綠區路由 → task23                  ← decision: green-zone routing
+[Output] (2.4s)
+<answer>
+
+> :rejection use ties_only
+[Rejection] 已切換到 ties_only（ties_only:e3de085e3caeaf23）   ← switched
+
+> <something unrelated to any known task>
+[Router] 判定：紅區拒絕 → 進入 rejection inference 分支   ← red-zone rejection
+[Rejection] ties_only:e3de085e3caeaf23
+[Output]
+<answer>
 ```
 
-## 準備拒絕分支要用的檔案
+The four zone labels are `直判路由` (direct routing), `綠區路由` (green-zone routing),
+`送審` (escalation) and `紅區拒絕` (red-zone rejection).
 
-`ta`、`ties_only`、`dare_ties_ta` 這三個方法各需要一個約 3.76 GB 的權重檔。**取得方式有兩種，
-選一種就好，結果完全一樣**：
+The request must be the complete instruction and input, and must not contain the
+answer to itself; the system rejects records whose prompt ends with their own target.
 
-- **方式一：下載** —— 需要網路與 Hugging Face 存取權。
-- **方式二：自己算** —— 用本機那 150 個 adapter，不需要網路。GPU 或 CPU 都可以。
-
-`base` 兩種都不需要，直接可用。`arrow` 與 `taskwise_k16_arrow` 不走這裡——它們用的是
-另一套檔案，見〈Arrow routing 的兩種變體〉。
-
-一鍵處理（建置時一起做完，權重檔會放進 repo 底下的 `artifacts/`）：
-
-```bash
-bash scripts/setup_workspace.sh --artifacts fetch --hf-repo <org>/<repo>   # 方式一
-bash scripts/setup_workspace.sh --artifacts merge                          # 方式二
-```
-
-也可以事後單獨補跑，見下面兩節。
-
-### 方式一：從 Hugging Face 下載
-
-先登入（一次就好，權杖會存在本機）：
-
-```bash
-hf auth login
-```
-
-下載並登記：
-
-```bash
-python scripts/fetch_artifact.py --repo <org>/<repo> --list --condition ties_only
-python scripts/fetch_artifact.py --repo <org>/<repo> --condition ties_only \
-  --artifact-root <本機路徑> --registry <本機路徑>/registry.json
-```
-
-`--list` 先看遠端有哪些版本。遠端同一個方法有多個版本時，必須用 `--run-id` 明講要哪一個
-——系統不會自己挑最新的。
-
-下載完會逐檔核對檔案大小與雜湊值，對不上就拒絕，不會把壞掉的檔案留下來。
-
-### 方式二：用本機的 150 個 adapter 自己算
-
-不需要網路。把那 150 個 adapter 放在 `adapter/task{N}/` 之下即可：
-
-```bash
-python scripts/merge_pool150.py --method ties_only --adapter-dir adapter \
-  --artifact-root <本機路徑> \
-  --registry <本機路徑>/registry.json --register-as ties_only \
-  --set system.dtype=bfloat16
-```
-
-`--method` 三選一：`ta`、`ties_only`、`dare_ties_ta`。三個都要就跑三次。
-
-**選 CPU 還是 GPU**：預設走 GPU（`--device cuda`）。沒有顯卡就加 `--device cpu`，
-結果一樣。`ties_only` 需要約 7.5 GB 顯示記憶體，用 GPU 的話顯卡至少要 12 GB。
-
-三個方法裡 `ties_only` 明顯最花時間（它要幫 150 個任務各算一次門檻），跑之前先預留時間。
-這是產生權重檔的一次性成本，之後回答請求時不會再做。
-
-已經算過的不會重算：程式會比對 adapter 的內容，同一批 adapter 算過就直接沿用。
-
-**關於編號**：每個權重檔的編號取自檔案本身的雜湊值，所以編號相同就保證內容相同。
-同一批 adapter 在同一台機器上算兩次會得到完全一樣的檔案；換一款顯卡則可能有極少數
-數值差最後一位（浮點加法換個順序算就差一位），那會是另一個編號——這是正確的，因為
-它們確實是兩份不同的檔案。差異程度可以用 `scripts/verify_against_producer.py` 對照。
-
-### 準備好之後：怎麼選用
-
-**不用設定路徑。** 上面兩種方式都會把權重檔放在 repo 底下的 `artifacts/`，清單檔就是
-`artifacts/registry.json`，這也是 `configs/default.yaml` 的預設值。準備好之後直接跑：
-
-```bash
-python main.py --mode interactive --set system.dtype=bfloat16
-```
-
-互動模式中：
-
-```text
-:rejection              顯示目前使用哪一個
-:rejection list         列出可選的項目（* 標示目前生效者）
-:rejection use ties_only  切換；底層模型不重載，幾秒完成
-```
-
-批次模式整批共用同一個：
+### Batch mode
 
 ```bash
 python main.py --mode batch --artifact ties_only
 ```
 
-benchmark 也是同一個寫法：
+| Flag | Meaning |
+|---|---|
+| `--artifact <id>` | Condition for all rejected samples in this run |
+| `--tasks 3,7,10` | Restrict to these tasks (default: all) |
+| `--limit 50` | At most this many records per task |
+
+One condition is used for the whole run, so results stay comparable. Batch mode needs
+`dataset/test_data/` in place.
+
+Results land in `results/main_batch_outputs.jsonl`, one JSON object per record:
+
+```json
+{"source_task": "task23",
+ "instance_id": "task23-0007",
+ "routed_to": null,
+ "diagnosis": {"zone": 3, "margin": 0.041, "pval": 0.01, "...": "..."},
+ "model_source": "rejection",
+ "rejection_method": "artifact",
+ "rejection_condition_id": "ties_only",
+ "rejection_run_id": "e3de085e3caeaf23",
+ "output": "..."}
+```
+
+`routed_to` is the task adapter used on accept, or `null` on reject. The three
+`rejection_*` fields record exactly which condition answered, so any output can be
+traced back to a specific set of weights. A timestamped copy of the file is written
+alongside it.
+
+### Getting the merging-branch artifacts
+
+Two ways, and they produce equivalent results.
+
+**Download from Hugging Face.** Log in once:
+
+```bash
+hf auth login
+```
+
+```bash
+python scripts/fetch_artifact.py --repo <org>/<repo> --condition ties_only --list
+python scripts/fetch_artifact.py --repo <org>/<repo> --condition ties_only
+```
+
+| Flag | Meaning |
+|---|---|
+| `--condition <id>` | Which condition to fetch |
+| `--list` | List available runs without downloading |
+| `--run-id <id>` | Required when the remote holds more than one run |
+| `--artifact-root <path>` | Where to place it (default: `artifacts/`) |
+| `--register-as <id>` | Registry id to record it under |
+
+Downloads are verified file by file against the sizes and checksums in `result.json`.
+When several runs exist for a condition you must name one — the system does not pick
+the newest.
+
+**Build offline from the local adapters.** No network required.
+
+```bash
+python scripts/merge_pool150.py --method ties_only --adapter-dir adapter
+```
+
+| Flag | Meaning |
+|---|---|
+| `--method {ta,ties_only,dare_ties_ta}` | Which condition to build |
+| `--adapter-dir adapter` | Derive the ordered manifest from `adapter/task{N}/` |
+| `--manifest <file>` | Use an explicit ordered manifest instead |
+| `--device cpu` | Compute on CPU (default `cuda`) |
+| `--artifact-root <path>` | Output root (default: `system.artifact_root`) |
+| `--registry <file>` | Registry to record into; `none` to skip |
+
+Hyperparameters are sealed and not adjustable — you choose the method, not the
+settings. Of the three, `ties_only` takes markedly longer than the others because it
+computes a magnitude threshold per task; budget time accordingly. `ties_only` also
+needs about 7.5 GB of GPU memory, so a card of at least 12 GB if you are not using
+`--device cpu`. This is a one-time cost; nothing of the sort happens while answering
+requests.
+
+Rebuilding is skipped when the same adapter pool has already produced an artifact.
+`pico_ta`, `lora_lego` and `adamerging_pp` cannot be built here — they only accept
+prepared artifacts.
+
+---
+
+## Benchmark
+
+`scripts/run_rejection_benchmark.py` **bypasses the Router entirely** and runs a
+fixed 15-OOD set through one condition. It measures the merging branch alone, not
+routing accuracy.
 
 ```bash
 python scripts/run_rejection_benchmark.py --artifact ties_only \
-  --benchmark-root <benchmark 資料目錄> --output-dir results/rejection-ties_only
+  --benchmark-root <benchmark data root> \
+  --output-dir results/rejection-ties_only \
+  --set system.dtype=bfloat16
 ```
 
-權重檔放在別的地方（例如共用儲存）時，才需要覆蓋預設：
+| Flag | Meaning |
+|---|---|
+| `--artifact <id>` | Condition under test; falls back to `system.rejection_method` |
+| `--benchmark-root <path>` | Benchmark dataset root (required) |
+| `--output-dir <path>` | Where results are written (required) |
+| `--group {all,ni,bbh,mmlu_pro}` | Restrict to one dataset family |
+| `--batch-size N` | Generation batch size |
+| `--smoke` | Run only the first record of each family, to check the pipeline |
+
+The set is 5 Natural Instructions, 5 BBH and 5 MMLU-Pro tasks, 4,159 records in full.
+The benchmark uses the same engine as interactive and batch modes; only the data
+source differs and the Router is skipped.
+
+Outputs:
+
+```text
+<output-dir>/ni_results.json
+<output-dir>/bbh_results.json
+<output-dir>/mmlu_pro_results.json
+<output-dir>/metrics.json      includes the condition identity under "rejection"
+```
+
+Generation is pinned to bfloat16, 8,192 input tokens and 1,024 new tokens. An
+over-long prompt stops the run rather than being silently truncated. Local scoring
+covers classification accuracy, ROUGE-L and BLEU. The GPT judge is never invoked
+automatically; `metrics.json` records `judge: not_run`.
+
+`lorahub` can be a benchmark subject if someone prepares an artifact fitted to this
+dataset, but it cannot serve arbitrary online requests.
+
+---
+
+## Evaluation
+
+Three separate things get evaluated. Keep them apart.
+
+### Routing quality
 
 ```bash
-python main.py --mode interactive \
-  --set system.artifact_registry=/shared/artifacts/registry.json
+python scripts/eval_router.py --mode decide   # zone assignment, CPU, minutes
+python scripts/eval_router.py --mode score    # escalation judging, GPU, resumable
+python scripts/eval_router.py --mode run      # settle
 ```
 
-只有列在清單檔裡的項目可以選——系統不掃描目錄，也不會自動挑最新的一份。切換前會完整
-檢查要換過去的那一份（格式、底層模型是否相符、檔案大小與雜湊值）；檢查沒過就維持原本
-生效的那一個，不會退回 `base`。
+| Flag | Meaning |
+|---|---|
+| `--mode {decide,score,run}` | Stage to run; they must run in this order |
+| `--ablate <variant>` | `no_multicentroid`, `no_direct`, `no_lexical`, `gray_reject`, `gray_route` |
+| `--fake_verifier` | Skip the real judge model, for pipeline checks |
 
-清單檔還沒建立時不會出錯，只是沒有可選項目，程式會印一行提示，拒絕分支就用
-`configs/default.yaml` 的 `system.rejection_method`（預設 `base`）。
-
-清單檔的格式見
-[`examples/artifact_registry.example.json`](examples/artifact_registry.example.json)。
-`artifacts/` 已列入 `.gitignore`，權重檔不會進版控。
-
-### Arrow routing 的兩種變體
-
-`arrow` 與 `taskwise_k16_arrow` 不需要上面那個 3.76 GB 的權重檔，但各自需要別的東西：
-
-- `arrow`：那 150 個 adapter 本身，加上一份事先算好的索引檔（`prepare/` 目錄）。
-- `taskwise_k16_arrow`：16 個代表 adapter 與索引檔（約 275 MB 的 `prepare/` 目錄）。
-  哪 16 個當代表是離線分群決定的，本系統不做分群，只讀現成的。
-
-兩者都在清單檔裡登記後即可用 `:rejection use` 切換，用法與上面相同。
-
-### 舊版權重檔的相容處理
-
-舊版工具產生的權重檔，說明檔（`result.json`）可能少了幾個欄位，本系統會拒絕載入。
-先跑一次補寫，只改說明檔、不動權重本身。第一行的 `--dry-run` 是「空跑」——把會做的事
-印出來但不真的改檔案，先確認對象沒選錯，確認後再跑第二行：
-
-```bash
-python scripts/migrate_artifact_manifest.py --scan <權重檔所在目錄> --dry-run
-python scripts/migrate_artifact_manifest.py --scan <權重檔所在目錄>
-```
-
-### 把權重檔分享給別人
-
-自己算好的權重檔要給其他人用時，可以上傳到私有的 Hugging Face repo。上傳與下載都只在
-準備階段使用——服務執行中不會對外連線。
-
-```bash
-python scripts/push_artifact.py --repo <org>/<repo> --dry-run \
-  --artifact <本機路徑>/ties_only/<編號>/prepare/merged_model
-python scripts/push_artifact.py --repo <org>/<repo> \
-  --artifact <本機路徑>/ties_only/<編號>/prepare/merged_model
-```
-
-只會建立私有 repo。加上 `--dry-run` 是空跑：檢查檔案、算出會傳到哪個路徑、加總大小，
-然後停住，不建 repo 也不上傳任何東西。11 GB 傳完才發現弄錯很花時間，空跑幾秒就能先確認
-清單。這個模式不需要登入。
-
-權重檔是 Llama-3.1-8B 的衍生物（只含 `down_proj` 的差值，不含底層模型本身）。公開散布前
-須確認 Llama 3.1 Community License 的附隨條款與上游資料授權。
-
-## 重現路由結果 Routing Zone Outcome and Accuracy/Ablation/Baseline Comparison
-
-### 1. 主評測
-
-```bash
-# 1a. 分區（CPU 數分鐘）：全部測試樣本分四區、產送審佇列
-python scripts/eval_router.py --mode decide 2>&1 | tee results/eval_decide.txt
-
-# 1b. 送審打分（GPU 數小時；中斷重跑自動續）：裁決 LLM 對佇列逐筆三題是非
-python scripts/eval_router.py --mode score 2>&1 | tee results/eval_score.txt
-
-# 1c. 結算
-python scripts/eval_router.py --mode run 2>&1 | tee results/eval_run.txt
-```
-
-### 2. Ablation 變體資產準備（無多質心版；一次性）
+`no_multicentroid` needs its own asset directory, built once with `k_max=1`:
 
 ```bash
 mkdir -p assets_ablate_nomc
@@ -402,7 +411,8 @@ python scripts/build_router_assets.py \
     --set paths.assets_dir=assets_ablate_nomc --set fingerprint.k_max=1
 ```
 
-### 3. 五個 Ablation 變體
+The other four variants run against the main assets. Each variant needs all three
+stages, in order:
 
 ```bash
 for AB in gray_reject gray_route no_lexical no_direct no_multicentroid; do
@@ -412,81 +422,103 @@ for AB in gray_reject gray_route no_lexical no_direct no_multicentroid; do
 done
 ```
 
-### 4. 兩支 Baseline
+Two routing baselines are available for comparison:
 
 ```bash
 python scripts/eval_baseline_mean_embedding.py --mode eval --tau 0.72
 python scripts/eval_baseline_bm25_voting.py    --mode eval --ratio_tau 0.5
+python scripts/export_report_data.py           # collate into results/report_data.json
 ```
 
-### 5. 匯總數據
+`scripts/verify_flow_table.py` replays the evaluation independently and checks it
+cell by cell against the main result.
+
+### Output quality (LLM as a judge)
+
+Scores the answers produced by `main.py --mode batch`. Each record's question, gold
+answer and model output go to an OpenAI model, which returns 0–5; 4 or above counts
+as correct. Requires your own API key.
 
 ```bash
-python scripts/export_report_data.py        # 輸出 results/report_data.json
-```
-
-## 批次推論結果評測 (LLM-as-a-judge)
-
-對批次推論的輸出以 OpenAI 模型閱卷：每筆將題目、標準答案、模型輸出
-交給 LLM 評分——score 0–5（5=完全正確）、score≥4 計為正確
-（is_correct），並附簡短評語。需自備 OpenAI API key。
-
-要先產生批次推論結果 results/main_batch_outputs.jsonl or results/main_batch_outputs_{時間戳}.jsonl
-
-```bash
-# key 僅存在當前終端機，不要寫進任何檔案
-export OPENAI_API_KEY=你的OPENAI_API_KEY
-
-# 評測最新的 batch_output 檔
+export OPENAI_API_KEY=<your key>          # keep it out of files
 python scripts/eval_outputs_llm_judge.py
-
-# 評測某個歷史 batch_output 檔
-python scripts/eval_outputs_llm_judge.py --batch results/main_batch_outputs_{時間戳}.jsonl
 ```
 
-選用參數，可組合：
+| Flag | Meaning |
+|---|---|
+| `--batch <file>` | Which batch output to score (default: the main file) |
+| `--tasks 3,7` | Restrict to these source tasks |
+| `--limit 5` | At most this many records per task |
+| `--model gpt-5-mini` | Judge model |
+| `--resume` | Skip records already scored |
+| `--workers 8` | Concurrent requests |
+| `--dry_run` | Validate data alignment without calling the API |
 
-- `--tasks 3,7`　只評這些來源任務（預設全部）
-- `--limit 5`　每任務最多評幾筆（少量測試用）
-- `--batch results/main_batch_outputs_{時間戳}.jsonl`
-  指定評哪份推論結果（預設評主檔 `results/main_batch_outputs.jsonl`）
-- `--model gpt-5-mini`　Judge 模型（預設 gpt-5-mini）
-- `--resume`　斷點續評（跳過已成功評分的樣本）
-- `--workers 8`　併發請求數
-- `--ood_dataset_dir dataset/ood_test_data`　OOD 標準答案目錄
+Results go to `results/llm_judge_{timestamp}.json`, with the timestamp inherited from
+the batch file being scored. `per_path` reports routed samples and each rejection
+condition separately.
 
-輸出 `results/llm_judge_{時間戳}.json`，時間戳繼承所評 batch 檔的產出時間。
-`per_path` 會把 routed 與各 rejection method（base、artifact、Arrow、
-Taskwise-K16）分開統計；這支 script 評的是完整 `main.py --mode batch`
-輸出，和只測 rejection condition 的 `run_rejection_benchmark.py` 用途不同。
+### Merging-branch quality
 
-## 從哪裡下手
+Use the benchmark above. It scores locally without an API key.
 
-- **拒絕分支**：入口 `system/rejection.py`；artifact 契約在
-  `system/merged_model.py`，Arrow 契約在 `system/arrow_runtime.py`，所有切換集中於
-  `system/inference.py`。SMoEA 不會在 query 時重新 merge，也不會自動選最新 run。
-- **生成行為**（prompt、解碼參數、adapter 解析）：`system/inference.py`。
-- **新增任務**：樣本放 `dataset/`、adapter 放 `adapter/task{N}/`、
-  線上服務重跑 `python scripts/build_router_assets.py --serving-only`；
-  要連同 benchmark test cache 一起建才改跑不帶此旗標的完整指令。
-  送審裁決另需在
-  `assets/unit_descriptions.json` 補該任務所屬單位的說明）。
-
-## 資料格式
-
-樣本檔 `{"task_key", "task_name", "definition", "instances": [...]}`，
-每筆 instance 含 `input`、`full_prompt`（完整任務說明與使用者輸入）、
-`output`、`instance_id`；亦相容純 array 與 JSONL。
-
-交付預設 `data.routing_text=answer_free_full_prompt` 使用完整、但不含標準答案的
-請求建 router，因為本專案 task0–14 的 `input` 沒有完整任務說明：
+To check that a locally built artifact matches a reference one:
 
 ```bash
-python scripts/build_router_assets.py --serving-only
+python scripts/verify_against_producer.py --method ties_only --adapter-dir adapter \
+  --producer <reference merged_model dir> --work-dir <scratch> --device cuda
 ```
 
-訓練資料的 `full_prompt` 尾端必須精確等於 `output`；建置時只移除這段答案。
-測試資料與互動輸入本來不含答案，會直接使用完整請求。建置出的
-`router_assets_meta.json` 會記錄 `routing_text`，可避免混淆兩套路由資產。
-若要重現上游直接使用短 `input` 的 router，才顯式加上
-`--set data.routing_text=input`，並使用另一個 assets 目錄。
+Identical checksums are not required. Floating-point addition is not associative and
+GPUs of different models sum in different orders, so a few values may land one step
+apart in the storage format. The report counts how many values differ and by how many
+steps; anything beyond one step is not rounding and should be treated as a defect.
+
+---
+
+## Testing
+
+Four layers, cheapest first.
+
+```bash
+python -m unittest discover -s tests      # 74 tests, no GPU or data needed
+python scripts/selftest_core_modules.py   # routing zones, conformal p-values, scoring
+python scripts/selftest_main_pipeline.py  # full batch pipeline on synthetic data
+python scripts/selftest_end_to_end.py     # asset build through evaluation
+python scripts/check_env.py               # package versions, CUDA, disk
+```
+
+The first four need neither GPU nor real data and finish in under a minute. They
+prove the wiring is correct, not that the answers are good — output quality is only
+visible with real weights.
+
+Acceptance on real hardware means: an interactive rejection, `--smoke` on the
+benchmark, and the full 4,159-record run.
+
+---
+
+## Data format
+
+Sample files are `{"task_key", "task_name", "definition", "instances": [...]}` where
+each instance carries `input`, `full_prompt` (the complete instruction and user
+input), `output` and `instance_id`. Plain arrays and JSONL are also accepted.
+
+The delivered default is `data.routing_text=answer_free_full_prompt`: the router is
+built from the complete request with the answer removed, because tasks 0–14 in this
+project have no full instruction in their `input` field. A training record's
+`full_prompt` must end exactly with its `output`; only that suffix is removed. Test
+data and interactive input contain no answer to begin with and are used as-is.
+
+`router_assets_meta.json` records which `routing_text` was used, so two sets of
+router assets cannot be confused. To reproduce the upstream router that used the
+short `input` field, pass `--set data.routing_text=input` explicitly and build into a
+separate assets directory.
+
+---
+
+## Further reading
+
+- [`docs/DELIVERY_ARCHITECTURE_RUNBOOK.md`](docs/DELIVERY_ARCHITECTURE_RUNBOOK.md) —
+  delivery architecture, condition inventory, acceptance steps
+- [`CONTEXT.md`](CONTEXT.md) — shared vocabulary and the invariants this system holds
+- [`docs/adr/`](docs/adr/) — architecture decisions and their trade-offs

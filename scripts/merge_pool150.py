@@ -94,12 +94,13 @@ def main() -> None:
                         help="改由 adapter/task{N}/ 慣例推導 manifest（依編號遞增排序）")
     parser.add_argument("--adapter-root", default=None,
                         help="manifest 中相對路徑的根目錄")
-    parser.add_argument("--artifact-root", required=True,
-                        help="產物落地根目錄（repo 之外）")
+    parser.add_argument("--artifact-root", default=None,
+                        help="產物落地根目錄；預設取設定檔的 system.artifact_root")
     parser.add_argument("--device", default="cuda",
                         help="merge 的運算裝置（cpu 亦可，較慢）")
     parser.add_argument("--registry", default=None,
-                        help="要登記進哪一份 registry.json")
+                        help="要登記進哪一份清單檔；預設取設定檔的 "
+                             "system.artifact_registry。傳 none 可略過登記")
     parser.add_argument("--register-as", default=None,
                         help="登記用的 id；預設同 --method")
     parser.add_argument("--expected-adapters", type=int, default=150)
@@ -107,6 +108,15 @@ def main() -> None:
     cfg = load_config(args.config, args.set)
     if bool(args.manifest) == bool(args.adapter_dir):
         parser.error("請擇一提供 --manifest 或 --adapter-dir")
+    # 未指定時沿用設定檔，使用者不必重複打路徑。
+    if args.artifact_root is None:
+        args.artifact_root = cfg["system"].get("artifact_root")
+        if not args.artifact_root:
+            parser.error("未設定 system.artifact_root，請用 --artifact-root 指定")
+    if args.registry is None:
+        args.registry = cfg["system"].get("artifact_registry")
+    if args.registry == "none":
+        args.registry = None
 
     import torch
 
