@@ -30,4 +30,11 @@ bitsandbytes>=0.49     # 僅供互動模式 4bit 裁決（選配，見下）；0
 # 2) bitsandbytes 僅供互動模式 4bit 裁決（選配）：裝不起來就移除該行，
 #    configs 的 system.verifier_mode 改 swap 或 off，主流程不受影響。
 
+# --- 交付通道（setup 階段取得 adapter pool 與 artifact；serving 不用）---
+huggingface_hub>=0.25   # transformers 本來就會帶進來，此處明列是因為
+                        # setup_workspace.sh 必用（adapter 自 HF 取得）。
+                        # 0.25 起才有 huggingface_hub.errors；下載端只要到
+                        # 這裡。上傳端（push_adapter_pool.py）另需 >=0.26 的
+                        # upload_large_folder，那是 producer 側的事。
+
 openai>=3,<4            # scripts/eval_outputs_llm_judge.py 要用

@@ -9,21 +9,26 @@
 #   bash scripts/setup_workspace.sh                     # 不準備 artifact（拒絕走 base）
 #   bash scripts/setup_workspace.sh --artifacts merge   # 以本機 adapter 線上合成
 #   bash scripts/setup_workspace.sh --artifacts fetch --hf-repo <org>/<repo>
+#   bash scripts/setup_workspace.sh --no-adapter-fetch  # adapter 已自備，不要下載
 #
 # ─────────────────────────────────────────────────────────────────────────────
 # 【需自行準備】（腳本會逐項檢查，缺哪項會明講）
 #   1. conda（miniconda 即可）與 NVIDIA 驅動已安裝
 #   2. Router 訓練樣本 → dataset/train_data/task{N}_train.json
 #      benchmark 才需要 dataset/test_data/，線上服務建置不要求。
-#   3. adapters → adapter/task{N}/（自 Google Drive 下載解壓後攤平放入；
-#        每個任務一個目錄，內含 adapter 檔或 checkpoint-*/）
+#   （adapter 不必自行準備——本腳本會自 Hugging Face 取得 pool150，見下）
 #   （單位說明書 assets/unit_descriptions.json 隨 repo 自帶，無需準備）
 #
 # 【腳本代辦】conda env 建置（於專案內 .conda/smoea，與既有環境完全
-# 隔離）＋鎖定依賴、環境體檢、查詢嵌入計算
+# 隔離）＋鎖定依賴、環境體檢、adapter pool 下載、查詢嵌入計算
 # （首次自動下載嵌入模型 ~1.3GB；GPU 數分鐘）、路由資產建置，
 # 以及（選用）rejection artifact 的準備。
 # base model 與裁決模型（各 ~16GB）會在首次執行 main.py 時自動下載。
+#
+# 【adapter pool】adapter/ 不足 150 個時自 --adapter-repo 取得（約 2.7 GB；
+# 預設 Tincan0325/smoea-adapter-pool150）。逐檔核對 sha256，已在本機且相符
+# 者跳過，所以中斷後重跑只補缺的部分。自備 adapter 者加 --no-adapter-fetch，
+# 把 adapter/task{N}/ 放好即可（內含 adapter 檔或 checkpoint-*/）。
 #
 # 【rejection artifact】--artifacts 決定拒絕分支有哪些選項可用：
 #   （不指定）  只有 base。之後仍可隨時單獨跑 merge/fetch 腳本補上
@@ -42,12 +47,16 @@ ARTIFACT_MODE=""
 ARTIFACT_ROOT="$(pwd)/artifacts"   # 與 configs 的預設一致，開箱即用
 HF_REPO=""
 ARTIFACT_METHODS="ta ties_only dare_ties_ta"
+ADAPTER_REPO="Tincan0325/smoea-adapter-pool150"
+ADAPTER_FETCH=1
 while [ $# -gt 0 ]; do
     case "$1" in
-        --artifacts)      ARTIFACT_MODE="$2"; shift 2 ;;
-        --artifact-root)  ARTIFACT_ROOT="$2"; shift 2 ;;
-        --hf-repo)        HF_REPO="$2"; shift 2 ;;
-        --methods)        ARTIFACT_METHODS="${2//,/ }"; shift 2 ;;
+        --artifacts)        ARTIFACT_MODE="$2"; shift 2 ;;
+        --artifact-root)    ARTIFACT_ROOT="$2"; shift 2 ;;
+        --hf-repo)          HF_REPO="$2"; shift 2 ;;
+        --methods)          ARTIFACT_METHODS="${2//,/ }"; shift 2 ;;
+        --adapter-repo)     ADAPTER_REPO="$2"; shift 2 ;;
+        --no-adapter-fetch) ADAPTER_FETCH=0; shift ;;
         *) echo "未知參數：$1"; exit 2 ;;
     esac
 done
@@ -62,17 +71,20 @@ echo "== SMoEA workspace setup @ $(pwd) =="
 
 fail() { echo "✗ $1"; echo "  → $2"; exit 1; }
 
-# ---- 0/5 檢查「需自行準備」清單 ----
+# ---- 0/6 檢查「需自行準備」清單 ----
+# adapter 在這裡不擋：[3/6] 會補齊。--no-adapter-fetch 才要求先放好。
 [ "$(ls dataset/train_data/task*.json* 2>/dev/null | wc -l)" -ge 1 ] \
-  || fail "dataset/train_data/ 沒有任務樣本"
+  || fail "dataset/train_data/ 沒有任務樣本" "見 README 步驟 2"
 [ -f assets/unit_descriptions.json ] \
-  || fail "缺 assets/unit_descriptions.json（repo 自帶）"
-[ "$(ls -d adapter/task* 2>/dev/null | wc -l)" -ge 1 ] \
-  || fail "adapter/ 沒有任務目錄" "自 Google Drive"
-echo "[0/5] 需自行準備的檔案齊全"
-echo "      Router 訓練樣本 $(ls dataset/train_data | wc -l) 檔、adapter $(ls -d adapter/task* | wc -l) 個任務"
+  || fail "缺 assets/unit_descriptions.json（repo 自帶）" "重新 clone 本 repo"
+N_ADAPTER="$(ls -d adapter/task* 2>/dev/null | wc -l)"
+[ "$ADAPTER_FETCH" -eq 1 ] || [ "$N_ADAPTER" -ge 1 ] \
+  || fail "指定了 --no-adapter-fetch，但 adapter/ 沒有任務目錄" \
+          "把 adapter/task{N}/ 放好，或拿掉 --no-adapter-fetch 讓腳本下載"
+echo "[0/6] 需自行準備的檔案齊全"
+echo "      Router 訓練樣本 $(ls dataset/train_data | wc -l) 檔、adapter $N_ADAPTER 個任務"
 
-# ---- 1/5 conda env ----
+# ---- 1/6 conda env ----
 # 已 activate 某個環境（非 base）→ 直接使用、不另建；
 # 否則尋找/建置具名 env「smoea」。conda 不在 PATH 時自動到常見
 # 安裝位置尋找（部分容器/機器的 shell 不會自動初始化 conda）。
@@ -85,7 +97,7 @@ act() {   # conda activate/deactivate 與 set -u 的相容包裝
     set +u; conda "$@"; set -u
 }
 if [ -n "${CONDA_DEFAULT_ENV:-}" ] && [ "${CONDA_DEFAULT_ENV}" != "base" ]; then
-    echo "[1/5] 使用當前已啟用的環境：${CONDA_DEFAULT_ENV}"
+    echo "[1/6] 使用當前已啟用的環境：${CONDA_DEFAULT_ENV}"
 else
     if ! command -v conda >/dev/null 2>&1; then
         for c in ~/miniconda3 ~/anaconda3 /opt/conda /opt/miniconda3; do
@@ -100,10 +112,10 @@ else
     # 不撞名；刪除專案目錄即完整移除
     ENV_DIR="$(pwd)/.conda/smoea"
     if [ ! -x "$ENV_DIR/bin/python" ]; then
-        echo "[1/5] 於專案內建置 conda env（$ENV_DIR）…"
+        echo "[1/6] 於專案內建置 conda env（$ENV_DIR）…"
         conda create -y -p "$ENV_DIR" python=3.12
     else
-        echo "[1/5] 專案內 conda env 已存在（$ENV_DIR）"
+        echo "[1/6] 專案內 conda env 已存在（$ENV_DIR）"
     fi
     act activate "$ENV_DIR"
 fi
@@ -112,27 +124,41 @@ ensure_deps
 # 把防護固化進 env：之後單獨 conda activate 也自帶（README 步驟 4 的前提）
 conda env config vars set PYTHONNOUSERSITE=1 >/dev/null 2>&1 || true
 
-# ---- 2/5 環境體檢 ----
-echo "[2/5] 環境體檢"
+# ---- 2/6 環境體檢 ----
+echo "[2/6] 環境體檢"
 python scripts/check_env.py || fail "體檢未過" "照上方 FAIL 提示處置後重跑本腳本"
 
-# ---- 3/5 路由資產（缺則建置；含查詢嵌入計算，快取後不重算）----
-mkdir -p results
-if [ ! -f assets/router_assets.npz ]; then
-    echo "[3/5] 建置路由資產（首次含嵌入計算；GPU 數分鐘）…"
-    python scripts/build_router_assets.py --serving-only
+# ---- 3/6 adapter pool（不足 150 個就補齊；逐檔核對 sha256）----
+N_ADAPTER="$(ls -d adapter/task* 2>/dev/null | wc -l)"
+if [ "$ADAPTER_FETCH" -eq 0 ]; then
+    echo "[3/6] --no-adapter-fetch：沿用本機的 $N_ADAPTER 個 adapter"
+elif [ "$N_ADAPTER" -ge 150 ]; then
+    echo "[3/6] adapter 已有 $N_ADAPTER 個，跳過下載"
+    echo "      要重新核對：python scripts/fetch_adapter_pool.py --repo $ADAPTER_REPO"
 else
-    echo "[3/5] 路由資產已存在，跳過（要重建：先刪 assets/router_assets.npz）"
+    echo "[3/6] 取得 adapter pool（$ADAPTER_REPO，約 2.7 GB）…"
+    python scripts/fetch_adapter_pool.py --repo "$ADAPTER_REPO" \
+      || fail "取得 adapter pool 失敗" \
+              "確認網路與 repo；私有 repo 需先 hf auth login。已下載的部分會保留，重跑只補缺的"
 fi
 
-# ---- 4/5 rejection artifact（選用）----
+# ---- 4/6 路由資產（缺則建置；含查詢嵌入計算，快取後不重算）----
+mkdir -p results
+if [ ! -f assets/router_assets.npz ]; then
+    echo "[4/6] 建置路由資產（首次含嵌入計算；GPU 數分鐘）…"
+    python scripts/build_router_assets.py --serving-only
+else
+    echo "[4/6] 路由資產已存在，跳過（要重建：先刪 assets/router_assets.npz）"
+fi
+
+# ---- 5/6 rejection artifact（選用）----
 REGISTRY="$ARTIFACT_ROOT/registry.json"
 if [ -z "$ARTIFACT_MODE" ]; then
-    echo "[4/5] 未指定 --artifacts，拒絕分支只會有 base"
+    echo "[5/6] 未指定 --artifacts，拒絕分支只會有 base"
     echo "      之後要補：bash scripts/setup_workspace.sh --artifacts merge"
 else
     mkdir -p "$ARTIFACT_ROOT"
-    echo "[4/5] 準備 rejection artifact（$ARTIFACT_MODE）→ $ARTIFACT_ROOT"
+    echo "[5/6] 準備 rejection artifact（$ARTIFACT_MODE）→ $ARTIFACT_ROOT"
     if [ "$ARTIFACT_MODE" = "merge" ]; then
         # 先擋掉池不完整的情況：合成要跑數十分鐘，不該做到一半才失敗。
         N_ADAPTER="$(ls -d adapter/task* 2>/dev/null | wc -l)"
@@ -143,7 +169,7 @@ else
     for METHOD in $ARTIFACT_METHODS; do
         if [ "$ARTIFACT_MODE" = "merge" ]; then
             python scripts/merge_pool150.py --method "$METHOD" \
-                --adapter-dir adapter --artifact-root "$ARTIFACT_ROOT" \
+                --artifact-root "$ARTIFACT_ROOT" \
                 --registry "$REGISTRY" --register-as "$METHOD" \
                 --set system.dtype=bfloat16 \
               || fail "合成 $METHOD 失敗" "照上方錯誤處置後重跑（已完成者會自動跳過）"
@@ -157,7 +183,7 @@ else
     echo "      registry：$REGISTRY"
 fi
 
-# ---- 5/5 完成 ----
+# ---- 6/6 完成 ----
 echo
 echo "== 全部就緒 =="
 echo "之後每次開終端機（在任何目錄皆可執行）："
