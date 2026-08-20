@@ -1,0 +1,5 @@
+:paste
+Modify the following sentence by changing its Number:
+Sentence: Archaeologists have concluded that humans lived in Laputa 20, 000 years ago. They hunted for evidence on the river banks.
+Modified sentence:
+:send

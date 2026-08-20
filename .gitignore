@@ -17,15 +17,17 @@ assets/router_assets_meta.json
 # 評測輸出（log 與結果 json 各自另行歸檔）
 results/
 
+# 拒絕分支的權重檔與其清單（每份約 3.76 GB；由 setup 準備或自遠端取得）
+artifacts/
+
 # 資料與模型（體積大，不進 git；以 tar/共用儲存另行傳輸，
 # 位置寫在 README 的 Reproduce 段）
-dataset/train_data/
-dataset/test_data/
+dataset/train_data
+dataset/test_data
 adapter/
 *.safetensors
 *.bin
 *.pt
-adapter/
 inference_results/
 
 .conda/

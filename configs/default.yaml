@@ -7,10 +7,10 @@ paths:
   dataset_dir: dataset            # 之下需有 train_data/ 與 test_data/
   assets_dir: assets              # build_router_assets 的輸出（嵌入快取、指紋、校準庫）
   results_dir: results            # 評測輸出 json
-  adapter_dir: adapter            # LoRA adapters（router 本身不讀，供下游載入）
 
 data:
-  field: input                    # 樣本檔中作為 query 文本的欄位
+  field: input                    # 上游相容欄位；routing_text=input 時使用
+  routing_text: answer_free_full_prompt # 交付預設；input 可重現上游短文字 router
   doc_clip_chars: 3000            # 文本截斷長度（TF-IDF / BM25 / 裁決 prompt 共用）
 
 embedding:
@@ -54,6 +54,18 @@ evaluation:
 system:                           # 主程式（main.py）：路由後的生成執行層
   base_model: unsloth/Meta-Llama-3.1-8B
   adapter_dir: adapter            # adapter/task{N}/（直含 adapter 檔或 checkpoint-*/ 取最新）
+  rejection_method: null          # null 預設 base；
+                                  # 也可明定 base | artifact | arrow | taskwise_k16_arrow
+  rejection_artifact_dir: null    # artifact: prepare/merged_model 完整目錄
+  rejection_router_dir: null      # Arrow: moea-repro 的 prepare/；Direct Arrow 可 null 現算
+  rejection_adapter_manifest: null # Direct Arrow: 依序列出 150 adapters 的 manifest.json
+  rejection_adapter_root: null    # manifest 相對 path 的根目錄；null 表示 manifest 所在目錄
+  artifact_registry: artifacts/registry.json  # 可選拒絕方法的清單檔。預設就在 repo 下的
+                                  # artifacts/（已列入 .gitignore），setup 準備好之後直接可用，
+                                  # 不必每次用 --set 指定路徑。檔案不存在時只是沒有可選項目，
+                                  # 不影響 rejection_method 指定的方法。掛載到別處時才覆蓋此項。
+  artifact_root: artifacts        # 權重檔的落地根目錄；結構
+                                  # <artifact_root>/<方法>/<run_id>/prepare/merged_model/
   load_in_4bit: false             # 生成模型量化；須與 MoEA-Trainer 訓練側載入設定一致
   dtype: float16
   max_input_tokens: 4096          # prompt 截斷長度（左 padding）

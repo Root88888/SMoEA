@@ -36,6 +36,11 @@ def load_config(path="configs/default.yaml", overrides=None):
     return cfg
 
 
+def routing_text_mode(cfg):
+    """路由文字的來源欄位：data.routing_text；未設定時退回舊的 data.field。"""
+    return cfg["data"].get("routing_text", cfg["data"]["field"])
+
+
 def add_config_args(parser=None):
     """給入口腳本共用的兩個參數：--config 與 --set。"""
     p = parser or argparse.ArgumentParser()
@@ -69,6 +74,34 @@ def _scan_task_ids(dirpath, suffix_hint):
     return ids
 
 
+def _declared_ood_tasks(dataset_dir):
+    marker = os.path.join(dataset_dir, "ood_tasks.txt")
+    if not os.path.exists(marker):
+        return set()
+    declared = set()
+    with open(marker, encoding="utf-8") as f:
+        for line in f:
+            line = line.split("#")[0].strip()
+            if line:
+                declared.add(int(line))
+    return declared
+
+
+def discover_serving_tasks(cfg):
+    """Find tasks needed to build the online router from training data only.
+
+    Unlike :func:`discover_tasks`, this path intentionally does not require
+    benchmark test files. Tasks declared as OOD are excluded even if a train
+    file is present, matching the full evaluation build.
+    """
+    ds = cfg["paths"]["dataset_dir"]
+    train_ids = _scan_task_ids(os.path.join(ds, "train_data"), "train")
+    if not train_ids:
+        raise FileNotFoundError(
+            f"{ds}/train_data 找不到任何 task 訓練檔（task{{t}}_train.json）")
+    return sorted(train_ids - _declared_ood_tasks(ds))
+
+
 def discover_tasks(cfg):
     """回傳 (id_tasks, ood_tasks)，皆為排序後的 int list。
 
@@ -89,12 +122,7 @@ def discover_tasks(cfg):
 
     marker = os.path.join(ds, "ood_tasks.txt")
     if os.path.exists(marker):
-        declared = set()
-        with open(marker, encoding="utf-8") as f:
-            for line in f:
-                line = line.split("#")[0].strip()
-                if line:
-                    declared.add(int(line))
+        declared = _declared_ood_tasks(ds)
         missing = sorted(declared - test_ids)
         if missing:
             raise ValueError(

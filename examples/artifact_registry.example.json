@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "entries": [
+    {
+      "id": "base",
+      "method": "base",
+      "description": "未套任何 update 的 base model"
+    },
+    {
+      "id": "ta",
+      "method": "artifact",
+      "artifact_dir": "ta/<run_id>/prepare/merged_model",
+      "description": "Task Arithmetic，pool150 全池"
+    },
+    {
+      "id": "ties",
+      "method": "artifact",
+      "artifact_dir": "ties_only/<run_id>/prepare/merged_model",
+      "description": "TIES-only，pool150 全池"
+    },
+    {
+      "id": "dare-ties",
+      "method": "artifact",
+      "artifact_dir": "dare_ties_ta/<run_id>/prepare/merged_model",
+      "description": "DARE-TIES + TA，pool150 全池"
+    },
+    {
+      "id": "arrow",
+      "method": "arrow",
+      "router_dir": "arrow/<run_id>/prepare",
+      "adapter_manifest": "/data/pool150/manifest.json",
+      "adapter_root": "/data/pool150",
+      "description": "Direct Arrow，150 experts，down_proj top-1"
+    }
+  ]
+}

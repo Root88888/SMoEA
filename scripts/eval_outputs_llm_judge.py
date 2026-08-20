@@ -11,10 +11,11 @@ scripts/eval_outputs_llm_judge.py
   reason / major_errors  簡短評語與主要錯誤
 標準答案自動自 dataset/test_data/task{N}_test.json 以 instance_id 對齊。
 
-結果按三個維度彙總：整體、每任務（per_task）、路徑（per_path：
-routed＝路由至單一 adapter 的輸出；rejected_merging＝拒絕後
-Adapter Merging 分支的輸出——該分支未實作時 output 為 null，
-一律列入 skipped_no_output 計數、不送評）。
+結果按三個維度彙總：整體、每任務（per_task）、路徑（per_path）。
+routed 代表路由至單一 adapter；拒絕分支依 batch metadata 分成
+rejected_base、rejected_artifact、rejected_arrow 或
+rejected_taskwise_k16_arrow。舊版沒有 rejection_method 的輸出仍標成
+rejected_merging；output 為 null 時列入 skipped_no_output，不送評。
 
 【少量測試】（先跑 batch 產出結果檔，再評分）
   python main.py --mode batch --tasks 3,7 --limit 5
@@ -178,25 +179,28 @@ def call_judge(client, model, item, max_retries, max_tokens):
     return {**item, "judge": None, "error": last_err}
 
 
-def load_references(dataset_dir, tasks_needed):
-    """{instance_id: {"input": full_prompt, "target": output}}（僅載所需任務）。"""
+def load_references(dataset_dirs, tasks_needed):
+    """依來源任務與 instance_id 載入所需標準答案。"""
     ref = {}
-    for t in sorted(tasks_needed):
-        hits = glob.glob(os.path.join(dataset_dir, f"{t}_test.json*"))
-        if not hits:
+    for dataset_dir in dataset_dirs:
+        if not dataset_dir:
             continue
-        with open(hits[0], encoding="utf-8") as f:
-            obj = json.load(f)
-        for x in (obj["instances"] if isinstance(obj, dict) else obj):
-            ref[x["instance_id"]] = {
-                "input": x.get("full_prompt") or x.get("input", ""),
-                "target": x.get("output", "")}
+        for t in sorted(tasks_needed):
+            hits = sorted(glob.glob(os.path.join(dataset_dir,
+                                                 f"{t}_test.json*")))
+            for hit in hits:
+                with open(hit, encoding="utf-8") as f:
+                    obj = json.load(f)
+                for x in (obj["instances"] if isinstance(obj, dict) else obj):
+                    ref[(t, x["instance_id"])] = {
+                        "input": x.get("full_prompt") or x.get("input", ""),
+                        "target": x.get("output", "")}
     return ref
 
 
-def build_items(batch_path, dataset_dir, tasks, limit):
-    rows = [json.loads(l) for l in open(batch_path, encoding="utf-8")
-            if l.strip()]
+def build_items(batch_path, dataset_dir, tasks, limit, ood_dataset_dir=None):
+    with open(batch_path, encoding="utf-8") as f:
+        rows = [json.loads(line) for line in f if line.strip()]
     if tasks:
         keep = {f"task{t.strip()}" for t in tasks.split(",")}
         rows = [r for r in rows if r["source_task"] in keep]
@@ -207,15 +211,26 @@ def build_items(batch_path, dataset_dir, tasks, limit):
                 out.append(r)
                 per[r["source_task"]] += 1
         rows = out
-    ref = load_references(dataset_dir, {r["source_task"] for r in rows})
+    ref = load_references(
+        [dataset_dir, ood_dataset_dir],
+        {r["source_task"] for r in rows})
 
     items, skipped = [], []
     for r in rows:
-        path = "routed" if r.get("routed_to") else "rejected_merging"
+        if r.get("routed_to"):
+            path = "routed"
+        elif r.get("rejection_method"):
+            path = f"rejected_{r['rejection_method']}"
+        else:
+            path = "rejected_merging"
         base = {"instance_id": r["instance_id"],
                 "source_task": r["source_task"],
-                "routed_to": r.get("routed_to"), "path": path}
-        g = ref.get(r["instance_id"])
+                "routed_to": r.get("routed_to"),
+                "path": path,
+                "rejection_method": r.get("rejection_method"),
+                "rejection_condition_id": r.get("rejection_condition_id"),
+                "rejection_run_id": r.get("rejection_run_id")}
+        g = ref.get((r["source_task"], r["instance_id"]))
         if r.get("output") is None:
             skipped.append({**base, "skip_reason": "no_output"})
         elif g is None:
@@ -264,6 +279,8 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--batch", default="results/main_batch_outputs.jsonl")
     ap.add_argument("--dataset_dir", default="dataset/test_data")
+    ap.add_argument("--ood_dataset_dir", default="dataset/ood_test_data",
+                    help="OOD 標準答案目錄；不存在時不影響一般 task 評測")
     ap.add_argument("--tasks", default=None,
                     help="僅評這些來源任務，如 3,7（預設全部）")
     ap.add_argument("--limit", type=int, default=None,
@@ -294,7 +311,8 @@ def main():
     print(f"[judge] 評分對象 {args.batch} → 輸出 {args.out}")
 
     items, skipped = build_items(args.batch, args.dataset_dir,
-                                 args.tasks, args.limit)
+                                 args.tasks, args.limit,
+                                 args.ood_dataset_dir)
     n_task = len({x["source_task"] for x in items})
     print(f"[judge] 待評 {len(items)} 筆（{n_task} 任務）；"
           f"略過 {len(skipped)} 筆"

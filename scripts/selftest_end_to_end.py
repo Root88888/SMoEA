@@ -114,6 +114,8 @@ def make_synth(root):
                       f"dataset_dir: {root}/dataset")
     txt = txt.replace("assets_dir: assets", f"assets_dir: {root}/assets")
     txt = txt.replace("results_dir: results", f"results_dir: {root}/results")
+    txt = txt.replace("routing_text: answer_free_full_prompt",
+                      "routing_text: input")
     txt = txt.replace("device: cuda", "device: cpu")
     open(cfgp, "w", encoding="utf-8").write(txt)
     return cfgp, ad

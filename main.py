@@ -4,9 +4,8 @@
 main.py — SMoEA 主程式：query → Router → adapter → inference → output
 
 架構圖對應：Router 分流之後，路由樣本
-由 system/InferenceEngine 載對應任務 adapter 生成（本檔完成）；拒絕
-樣本進 Model Merging 分支（接口 system/rejection.py，待實作——
-目前拒絕樣本會印明去向並跳過生成）。
+由 system/InferenceEngine 載對應任務 adapter 生成；拒絕樣本使用
+system.rejection_method 明確指定的 base、artifact 或 Arrow runtime。
 
 【互動模式】單筆 query 跑完整流程並顯示 router 逐步判定：
   python main.py --mode interactive
@@ -16,9 +15,9 @@ main.py — SMoEA 主程式：query → Router → adapter → inference → out
     off            不載裁決，送審一律拒絕（fail-closed）
 
 【批次模式】跑 dataset 測試檔全部（或指定任務），逐筆路由＋生成：
-  python main.py --mode batch [--tasks 3,7,10] [--limit 50]
+  python main.py --mode batch [--tasks 3,7,10] [--limit 50] [--artifact <id>]
   → results/main_batch_outputs.jsonl（每行：instance_id / query /
-    router 診斷 / 去向 / 模型輸出；拒絕樣本 output=null、留診斷）
+    router 診斷 / 去向 / 實際 model source / 模型輸出）
   流程分三段執行以省模型切換：全量分區 → 送審打分 → 按任務分組生成。
 
 【scale up】任務、adapter、樣本量全部資料驅動；生成按任務分組批次、
@@ -39,9 +38,26 @@ from router import conformal, data_io  # noqa: E402
 from router.config import config_from_cli, discover_tasks  # noqa: E402
 from router.core import Router  # noqa: E402
 from system.inference import InferenceEngine  # noqa: E402
+from system.merged_model import MergedModelError  # noqa: E402
+from system.rejection import run_rejection  # noqa: E402
 
 ZONE_LABEL = {0: "直判路由 (margin>floor)", 1: "綠區路由",
               2: "送審", 3: "紅區拒絕"}
+
+
+def external_task_key(task_id):
+    """將 SMoEA 內部 OOD alias 還原為公司資料使用的原始 ID。"""
+    return "task149" if int(task_id) == 9149 else f"task{int(task_id)}"
+
+
+def generation_prompt(record, field):
+    """取得 answer-free 完整題目，拒絕把本題 target 接在尾端的 record。"""
+    prompt = str(record.get("full_prompt", record.get(field, "")))
+    target = str(record.get("output", "")).strip()
+    if target and prompt.rstrip().endswith(target):
+        raise ValueError(
+            f"record {record.get('instance_id', '?')} 的 full_prompt 尾端包含本題答案")
+    return prompt
 
 
 # ---------------------------------------------------------------------------
@@ -115,10 +131,69 @@ def print_diagnosis(d):
 # ---------------------------------------------------------------------------
 # 互動模式
 # ---------------------------------------------------------------------------
+def handle_rejection_command(engine, argument):
+    """處理 `:rejection` 系列指令；印出結果，不回傳查詢。"""
+    entries = engine.available_rejections()
+    if argument in ("", "show"):
+        current = engine.current_rejection()
+        print(f"[Rejection] 目前：{current['id']} "
+              f"（{current['condition_id']}"
+              + (f":{current['run_id']}" if current["run_id"] else "") + "）")
+        return
+    if argument == "list":
+        if not entries:
+            print("[Rejection] 未設定 system.artifact_registry，無可選項目")
+            return
+        current_id = engine.current_rejection()["id"]
+        for entry in entries:
+            mark = "*" if entry.id == current_id else " "
+            print(f" {mark} {entry.summary()}")
+        return
+    if argument.startswith("use "):
+        wanted = argument[4:].strip()
+        try:
+            current = engine.select_rejection(wanted)
+        except MergedModelError as exc:
+            # 驗證失敗不換：目前生效的 artifact 原封不動。
+            print(f"[Rejection] 切換失敗，維持 "
+                  f"{engine.current_rejection()['id']}：{exc}")
+            return
+        print(f"[Rejection] 已切換到 {current['id']} "
+              f"（{current['condition_id']}"
+              + (f":{current['run_id']}" if current["run_id"] else "") + "）")
+        return
+    print("[Rejection] 用法：:rejection  |  :rejection list  |  :rejection use <id>")
+
+
+def read_interactive_request():
+    """讀一筆互動請求；`:paste` 可收集多行，直到單獨一行 `:send`。"""
+    try:
+        first = input("\n> ").strip()
+    except (EOFError, KeyboardInterrupt):
+        return None
+    if first.lower() in ("exit", "quit"):
+        return None
+    if first.startswith(":rejection"):
+        return (":rejection", first[len(":rejection"):].strip())
+    if first != ":paste":
+        return first
+
+    print("[輸入] 貼上完整任務要求與內容；單獨一行 :send 送出")
+    lines = []
+    while True:
+        try:
+            line = input()
+        except (EOFError, KeyboardInterrupt):
+            return "\n".join(lines).strip() or None
+        if line.strip() == ":send":
+            return "\n".join(lines).strip()
+        lines.append(line)
+
+
 def run_interactive(cfg, rt, preload=True):
     engine = InferenceEngine(cfg)
     vmode = cfg["system"]["verifier_mode"]
-    scorer = make_verifier(cfg, vmode)
+    scorer = make_verifier(cfg, vmode) if preload else None
     descs = rt.load_descriptions() if vmode != "off" else None
     if descs is not None:
         miss = [u for u in range(len(rt.units)) if str(u) not in descs]
@@ -137,18 +212,26 @@ def run_interactive(cfg, rt, preload=True):
             # adapter 熱切換（秒級）與生成本身。swap 模式不預載
             # 生成模型（其設計本來就是用到才載、判完即卸）。
             engine.load_base()
-    print("\n===== SMoEA 互動模式（輸入 query，exit 離開）=====")
+    print("\n===== SMoEA 互動模式 =====")
+    print("單行請求可直接輸入；多行請求先輸入 :paste，貼完以 :send 送出；"
+          "exit 離開")
+    print(f"拒絕分支目前使用 {engine.current_rejection()['id']}；"
+          ":rejection list 看可選項目、:rejection use <id> 切換")
     while True:
-        try:
-            q = input("\n> ").strip()
-        except (EOFError, KeyboardInterrupt):
+        q = read_interactive_request()
+        if q is None:
             break
-        if not q or q.lower() in ("exit", "quit"):
-            break
+        if isinstance(q, tuple):
+            handle_rejection_command(engine, q[1])
+            continue
+        if not q:
+            continue
         dec = rt.decide([q])
         z = int(dec["zone"][0])
         if z == conformal.ZONE_ESCALATE:
             if vmode == "resident_4bit":
+                if scorer is None:
+                    scorer = make_verifier(cfg, vmode)
                 rt.escalate(dec, [q], scorer, descs)
             elif vmode == "swap":
                 swap_verify(cfg, rt, engine, [q], dec)
@@ -167,19 +250,20 @@ def run_interactive(cfg, rt, preload=True):
         else:
             d["zone"] = "red" if z == conformal.ZONE_RED else "esc_rej"
             print(f"[Router] 判定：{ZONE_LABEL[z] if z != 2 else '送審→拒絕'}"
-                  f" → 進入 Adapter Merging 分支")
+                  f" → 進入 rejection inference 分支")
             try:
-                from system.rejection import handle_rejection
-                out = handle_rejection(q, engine)
-                print(f"[Output]\n{out}")
-            except NotImplementedError as e:
+                outs, info = run_rejection(engine, [q])
+                print(f"[Rejection] {info['condition_id']}"
+                      + (f":{info['run_id']}" if info["run_id"] else ""))
+                print(f"[Output]\n{outs[0]}")
+            except MergedModelError as e:
                 print(f"[System] {e}")
 
 
 # ---------------------------------------------------------------------------
 # 批次模式
 # ---------------------------------------------------------------------------
-def run_batch(cfg, rt, tasks_arg, limit):
+def run_batch(cfg, rt, tasks_arg, limit, artifact=None):
     id_tasks, ood_tasks = discover_tasks(cfg)
     wanted = ([int(x) for x in tasks_arg.split(",")]
               if tasks_arg else id_tasks + ood_tasks)
@@ -192,7 +276,7 @@ def run_batch(cfg, rt, tasks_arg, limit):
         for r in recs:
             rows.append((t, r.get("instance_id", f"task{t}-?"),
                          str(r.get(field, ""))[:3000],
-                         r.get("full_prompt", r.get(field, ""))))
+                         generation_prompt(r, field)))
     print(f"[batch] {len(wanted)} 任務、{len(rows)} 筆")
 
     texts = [r[2] for r in rows]
@@ -218,6 +302,12 @@ def run_batch(cfg, rt, tasks_arg, limit):
     assert miss == 0
 
     engine = InferenceEngine(cfg)
+    if artifact is not None:
+        # 整批共用同一個 artifact（ADR-0001）：先確定選得到，再開始生成。
+        current = engine.select_rejection(artifact)
+        print(f"[batch] 拒絕分支使用 {current['id']}"
+              f"（{current['condition_id']}"
+              + (f":{current['run_id']}" if current["run_id"] else "") + "）")
     outputs = [None] * len(rows)
     routed = {}
     for i, p in enumerate(pred):
@@ -233,6 +323,17 @@ def run_batch(cfg, rt, tasks_arg, limit):
                 outputs[i] = o
         print(f"[batch] {task_key}: {len(idxs)} 筆生成完")
 
+    rejected = [i for i, p in enumerate(pred) if p < 0]
+    rejection_info = None
+    if rejected:
+        outs, rejection_info = run_rejection(
+            engine, [rows[i][3] for i in rejected], batch_size=bs)
+        for i, o in zip(rejected, outs):
+            outputs[i] = o
+        print(f"[batch] rejection method "
+              f"{rejection_info['condition_id']}:{rejection_info['run_id']}: "
+              f"{len(rejected)} 筆生成完")
+
     rd = cfg["paths"]["results_dir"]
     os.makedirs(rd, exist_ok=True)
     out_path = os.path.join(rd, "main_batch_outputs.jsonl")
@@ -243,16 +344,27 @@ def run_batch(cfg, rt, tasks_arg, limit):
             p = int(pred[i])
             if p < 0:
                 n_rej += 1
+            uses_rejection = p < 0
             f.write(json.dumps(
-                {"source_task": f"task{t}", "instance_id": iid,
+                {"source_task": external_task_key(t), "instance_id": iid,
+                 "internal_task_id": (f"task{t}" if t == 9149 else None),
                  "routed_to": (f"task{rt.id_tasks[p]}" if p >= 0 else None),
-                 "diagnosis": d, "output": outputs[i]},
+                 "diagnosis": d,
+                 "model_source": ("rejection" if uses_rejection
+                                  else "task_adapter"),
+                 "rejection_method": (rejection_info["method"]
+                                      if uses_rejection else None),
+                 "rejection_condition_id": (rejection_info["condition_id"]
+                                             if uses_rejection else None),
+                 "rejection_run_id": (rejection_info["run_id"]
+                                      if uses_rejection else None),
+                 "output": outputs[i]},
                 ensure_ascii=False) + "\n")
     import shutil
     ts = time.strftime("%Y%m%d_%H%M%S")
     shutil.copy(out_path, out_path.replace(".jsonl", f"_{ts}.jsonl"))
-    print(f"[batch] 路由生成 {len(rows)-n_rej} 筆、拒絕 {n_rej} 筆"
-          f"（拒絕樣本 output=null，待 Adapter Merging 分支）")
+    print(f"[batch] task adapter 生成 {len(rows)-n_rej} 筆、"
+          f"rejection method 生成 {n_rej} 筆")
     print(f"[done] → {out_path}（含時間戳副本）")
 
 
@@ -264,15 +376,18 @@ def main():
                        help="批次模式限定任務，如 3,7,10；預設全部"),
         p.add_argument("--limit", type=int, default=None,
                        help="批次模式每任務最多筆數（試跑用）"),
+        p.add_argument("--artifact", default=None,
+                       help="批次模式的拒絕 artifact；值為 "
+                            "system.artifact_registry 中宣告的 id，整批共用"),
         p.add_argument("--no_preload", action="store_true",
-                       help="互動模式不預載模型（只看路由判定的輕量用法）")))
+                       help="互動模式延後到第一筆需要時才載入模型")))
     rt = Router.load(cfg)
     print(f"[Router] 資產已載：{len(rt.id_tasks)} 任務、"
           f"{len(rt.units)} 路由單位")
     if args.mode == "interactive":
         run_interactive(cfg, rt, preload=not args.no_preload)
     else:
-        run_batch(cfg, rt, args.tasks, args.limit)
+        run_batch(cfg, rt, args.tasks, args.limit, args.artifact)
 
 
 if __name__ == "__main__":
