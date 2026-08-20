@@ -106,7 +106,8 @@ def main() -> None:
     parser.add_argument("--manifest", default=None,
                         help="pool150 的有序 adapter manifest")
     parser.add_argument("--adapter-dir", default=None,
-                        help="改由 adapter/task{N}/ 慣例推導 manifest（依編號遞增排序）")
+                        help="由 adapter/task{N}/ 慣例推導 manifest（依編號遞增排序）；"
+                             "預設取設定檔的 system.adapter_dir")
     parser.add_argument("--adapter-root", default=None,
                         help="manifest 中相對路徑的根目錄")
     parser.add_argument("--artifact-root", default=None,
@@ -121,8 +122,12 @@ def main() -> None:
     parser.add_argument("--expected-adapters", type=int, default=150)
     args = parser.parse_args()
     cfg = load_config(args.config, args.set)
-    if bool(args.manifest) == bool(args.adapter_dir):
-        parser.error("請擇一提供 --manifest 或 --adapter-dir")
+    if args.manifest and args.adapter_dir:
+        parser.error("--manifest 與 --adapter-dir 只能擇一")
+    if not args.manifest and not args.adapter_dir:
+        # 設定檔已經定義了 adapter 的位置（InferenceEngine 也用同一個值），
+        # 不該再要求使用者指定一次。
+        args.adapter_dir = cfg["system"]["adapter_dir"]
     # 未指定時沿用設定檔，使用者不必重複打路徑。
     if args.artifact_root is None:
         args.artifact_root = cfg["system"].get("artifact_root")

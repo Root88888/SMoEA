@@ -30,7 +30,7 @@ answer-free full prompt → Router ──命中(Accept)──→ Task Adapter �
 |---|---|---|
 | **Request / Query** | 使用者送進來的一筆完整任務要求與內容 | prompt（太籠統） |
 | **Answer-free full prompt** | 含完整任務說明、**不含本題標準答案**的請求全文。這是 Router 與生成兩端共用的唯一輸入形式 | full_prompt（僅指欄位名） |
-| **Routing text** | 建置路由資產時採用的文字來源，`answer_free_full_prompt`（交付預設）或 `input`（重現上游）。資產與設定不一致時必須報錯 | — |
+| **Routing text** | 建置路由資產時採用的文字來源：`input`（交付預設，與隨附資產一致）或 `answer_free_full_prompt`（用完整但不含答案的請求建置）。資產與設定不一致時必須報錯——切換模式要建置到另一個 assets 目錄 | — |
 | **Instance** | 資料檔中的一筆樣本，含 `input` / `full_prompt` / `output` / `instance_id` | sample（可，但以 instance 為準） |
 
 ### 路由層（`router/`）
