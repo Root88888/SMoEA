@@ -245,7 +245,7 @@ fingerprint pile), TF-IDF lexical fingerprints, and the task description
 book (the adjudication basis for the slow path). Adding a task only requires
 rerunning the build.
 
-Full decision flowchart: [docs/router_flowchart.jpg](docs/router_flowchart.jpg)
+Full router flowchart: [docs/router_flowchart.jpg](docs/router_flowchart.jpg)
 
 ## Router Evaluation on the Full Test Set
 
