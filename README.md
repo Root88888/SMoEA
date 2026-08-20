@@ -46,12 +46,12 @@ reload it.
 |---|---|---|---|
 | `base` | Nothing layered on top; the base model answers directly. Needs no extra files. | yes | n/a |
 | `ta` | Task Arithmetic. Averages all 150 task adapters into one set of weights. | yes | yes |
-| `pico_ta` | A low-rank pre-step before Task Arithmetic. | yes | no |
+| `pico_ta` | A low-rank pre-step before Task Arithmetic. | yes | yes |
 | `ties_only` | Trims each adapter to its largest-magnitude coordinates, elects a sign per coordinate, and keeps only the contributions that agree. `only` means TIES with no optimisation stage on top — as opposed to `adamerging_pp`. | yes | yes |
 | `dare_ties_ta` | Random drop, rescale, sign election, then Task Arithmetic. The sealed drop rate is 0, so the random stage is effectively disabled. | yes | yes |
-| `lora_lego` | LoRA-Lego merging. | yes | no |
-| `adamerging_pp` | TIES as a pre-step, then optimisation of the merge coefficients. | yes | no |
-| `lorahub` | LoRAHub. **Benchmark subject only** — its coefficients are fitted against a specific dataset and seed, so there is no single set of weights valid for arbitrary online requests. | **no** | no |
+| `lora_lego` | LoRA-Lego merging. Clusters rank-wise units across the pool. | yes | yes |
+| `adamerging_pp` | TIES as a pre-step, then optimisation of the merge coefficients. Needs the model loaded and training data, so it is not a pure weight operation. | yes | not yet |
+| `lorahub` | LoRAHub. **Benchmark subject only** — its coefficients are fitted against a specific dataset and seed, so there is no single set of weights valid for arbitrary online requests. | **no** | not yet |
 
 Each baseline except `base` needs one weight file of roughly 3.76 GB.
 
@@ -173,7 +173,7 @@ given — prepares the merging-branch weight files under `artifacts/`.
 | Flag | Meaning |
 |---|---|
 | `--artifacts fetch` | Download prepared artifacts from a Hugging Face repo |
-| `--artifacts merge` | Build `ta`, `ties_only` and `dare_ties_ta` from the local adapters |
+| `--artifacts merge` | Build the faster three (`ta`, `ties_only`, `dare_ties_ta`) from the local adapters; use `--methods` for others |
 | `--hf-repo <org>/<repo>` | Source repository, required with `fetch` |
 | `--artifact-root <path>` | Where artifacts land (default: `artifacts/`) |
 | `--methods ta,ties_only` | Restrict which conditions to prepare |
@@ -319,7 +319,7 @@ python scripts/merge_pool150.py --method ties_only --adapter-dir adapter
 
 | Flag | Meaning |
 |---|---|
-| `--method {ta,ties_only,dare_ties_ta}` | Which condition to build |
+| `--method {ta,ties_only,dare_ties_ta,pico_ta,lora_lego}` | Which condition to build |
 | `--adapter-dir adapter` | Derive the ordered manifest from `adapter/task{N}/` |
 | `--manifest <file>` | Use an explicit ordered manifest instead |
 | `--device cpu` | Compute on CPU (default `cuda`) |
@@ -334,8 +334,8 @@ needs about 7.5 GB of GPU memory, so a card of at least 12 GB if you are not usi
 requests.
 
 Rebuilding is skipped when the same adapter pool has already produced an artifact.
-`pico_ta`, `lora_lego` and `adamerging_pp` cannot be built here — they only accept
-prepared artifacts.
+`adamerging_pp` and `lorahub` are not built here yet: both need the model loaded and
+data to optimise against, which is a different kind of work from a weight operation.
 
 ---
 

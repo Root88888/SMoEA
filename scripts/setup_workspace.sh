@@ -27,7 +27,9 @@
 #
 # 【rejection artifact】--artifacts 決定拒絕分支有哪些選項可用：
 #   （不指定）  只有 base。之後仍可隨時單獨跑 merge/fetch 腳本補上
-#   merge      以本機 adapter/ 線上合成 ta、ties_only、dare_ties_ta
+#   merge      以本機 adapter/ 建置權重檔。預設只做 ta、ties_only、dare_ties_ta
+#              （較快的三個）；--methods 可指定其他，例如 pico_ta、lora_lego。
+#              建置是獨立動作，前置沒做也能之後單獨補跑 merge_pool150.py
 #              （每份約 3.76 GB、需 GPU；已存在者自動跳過）
 #   fetch      自 --hf-repo 指定的 Hugging Face repo 取得現成 artifact
 # 準備好的項目會登記進 <artifact-root>/registry.json，執行期以

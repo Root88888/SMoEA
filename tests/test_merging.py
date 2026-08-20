@@ -90,12 +90,27 @@ class MergingTests(unittest.TestCase):
                 expected, rtol=1e-5, atol=1e-5)
 
     def test_every_method_covers_each_layer_once(self):
+        # lora_lego 的 output_rank 是 16，需要至少 16 個 MSU（任務數 × rank）。
+        big = SyntheticPool(self.root / "big", count=10, seed=5).load()
         for method in SEALED:
             with self.subTest(method=method):
                 out = self.root / f"{method}.safetensors"
-                report = merge_pool(method, self.pool, out)
+                report = merge_pool(method, big, out)
                 self.assertEqual(report["module_count"], LAYERS)
                 self.assertEqual(report["status"], "complete")
+
+    def test_lego_refuses_a_pool_with_too_few_msus(self):
+        """output_rank 超過 MSU 總數時必須明講，而不是產出無意義的分群。"""
+        with self.assertRaisesRegex(ValueError, "output_rank"):
+            merge_pool("lora_lego", self.pool, self.root / "x.safetensors")
+
+    def test_pico_and_lego_are_deterministic(self):
+        big = SyntheticPool(self.root / "det", count=10, seed=6).load()
+        for method in ("pico_ta", "lora_lego"):
+            with self.subTest(method=method):
+                first = merge_pool(method, big, self.root / f"{method}-1.st")
+                second = merge_pool(method, big, self.root / f"{method}-2.st")
+                self.assertEqual(first["output_sha256"], second["output_sha256"])
 
     def test_merging_the_same_pool_twice_is_bit_identical(self):
         first = merge_pool("dare_ties_ta", self.pool, self.root / "d1.safetensors")
@@ -247,6 +262,10 @@ class SealedHyperparameterTests(unittest.TestCase):
                       "tile_rows": 4},
         "dare_ties_ta": {"density": 1.0, "lambda": 0.25, "sign_method": "total",
                          "rescale": True, "tile_rows": 16, "mask_block_rows": 8},
+        "pico_ta": {"reduction": "mean", "eps": 1e-12},
+        "lora_lego": {"output_rank": 16, "output_ref_rank": 8, "lego_seed": 0,
+                      "n_init": 10, "max_iter": 300, "parameter_reweight": True,
+                      "output_reweight": True, "eps": 1e-12},
     }
 
     def test_sealed_values_match_the_producer(self):

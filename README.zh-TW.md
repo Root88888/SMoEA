@@ -41,12 +41,12 @@ Reject 之後的一切。所有 condition 共用同一個 **base model**
 |---|---|---|---|
 | `base` | 什麼都不疊，直接由 base model 回答。不需要額外檔案。 | 可 | 不適用 |
 | `ta` | Task Arithmetic。把 150 個任務 adapter 平均成一組權重。 | 可 | 可 |
-| `pico_ta` | 在 Task Arithmetic 之前先做一層低秩處理。 | 可 | 否 |
+| `pico_ta` | 在 Task Arithmetic 之前先做一層低秩處理。 | 可 | 可 |
 | `ties_only` | 先把每個 adapter 修剪成數值最大的那部分座標，再逐座標選出方向，只保留與該方向一致的貢獻。名稱裡的 `only` 表示 TIES 之後沒有再接最佳化階段——用來與 `adamerging_pp` 區分。 | 可 | 可 |
 | `dare_ties_ta` | 隨機丟棄、放大補回、取號投票，再接 Task Arithmetic。封板的丟棄比例是 0，所以隨機那一階段實際上關閉了。 | 可 | 可 |
-| `lora_lego` | LoRA-Lego 的合併方式。 | 可 | 否 |
-| `adamerging_pp` | 以 TIES 當前處理，再對合併係數做最佳化。 | 可 | 否 |
-| `lorahub` | LoRAHub。**只能當 benchmark 的受測對象** —— 它的係數是針對特定資料集與種子擬合出來的，沒有一組權重能對應任意的線上請求。 | **不可** | 否 |
+| `lora_lego` | LoRA-Lego 的合併方式，把整個池的逐 rank 單元分群。 | 可 | 可 |
+| `adamerging_pp` | 以 TIES 當前處理，再對合併係數做最佳化。需要載入模型與訓練資料，不是純權重運算。 | 可 | 尚未 |
+| `lorahub` | LoRAHub。**只能當 benchmark 的受測對象** —— 它的係數是針對特定資料集與種子擬合出來的，沒有一組權重能對應任意的線上請求。 | **不可** | 尚未 |
 
 除了 `base` 之外，每個 baseline 各需要一個約 3.76 GB 的權重檔。
 
@@ -155,7 +155,7 @@ bash scripts/setup_workspace.sh --artifacts merge                          # 本
 | 參數 | 意思 |
 |---|---|
 | `--artifacts fetch` | 從 Hugging Face repo 下載備好的 artifact |
-| `--artifacts merge` | 用本機的 adapter 建置 `ta`、`ties_only`、`dare_ties_ta` |
+| `--artifacts merge` | 用本機的 adapter 建置較快的三個（`ta`、`ties_only`、`dare_ties_ta`）；其他用 `--methods` 指定 |
 | `--hf-repo <org>/<repo>` | 來源 repo，搭配 `fetch` 使用時必填 |
 | `--artifact-root <路徑>` | artifact 落地位置（預設 `artifacts/`） |
 | `--methods ta,ties_only` | 限定要準備哪幾個 condition |
@@ -292,7 +292,7 @@ python scripts/merge_pool150.py --method ties_only --adapter-dir adapter
 
 | 參數 | 意思 |
 |---|---|
-| `--method {ta,ties_only,dare_ties_ta}` | 要建置哪一個 condition |
+| `--method {ta,ties_only,dare_ties_ta,pico_ta,lora_lego}` | 要建置哪一個 condition |
 | `--adapter-dir adapter` | 由 `adapter/task{N}/` 慣例推導有序清單 |
 | `--manifest <檔案>` | 改用明確指定的有序清單 |
 | `--device cpu` | 用 CPU 計算（預設 `cuda`） |
@@ -304,8 +304,8 @@ python scripts/merge_pool150.py --method ties_only --adapter-dir adapter
 7.5 GB 顯示記憶體，不用 `--device cpu` 的話顯卡至少要 12 GB。這是一次性成本，回答
 請求時不會再做這件事。
 
-同一批 adapter 已經建置過就不會重算。`pico_ta`、`lora_lego`、`adamerging_pp` 無法在
-這裡建置 —— 它們只接受備好的 artifact。
+同一批 adapter 已經建置過就不會重算。`adamerging_pp` 與 `lorahub` 目前還不能在這裡
+建置：兩者都需要載入模型、對資料做最佳化，性質與權重運算不同。
 
 ---
 

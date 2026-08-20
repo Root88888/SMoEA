@@ -6,6 +6,8 @@ ADR-0002。三種方法的權重運算從 MoEA-Trainer-delivery 搬入：
   ta         src/task_arithmetic/runtime.py::materialize_task_arithmetic
   ties       src/adamerging/exact_ties.py
   dare_ties_ta  src/dare_ties/runtime.py::materialize_dare_ties
+  pico_ta       src/pico/task_arithmetic.py
+  lora_lego     src/lego/merger.py
              （含 src/dare_ties/pool50.py 的 mask 與 election，改用 pool150 命名）
 
 只搬純權重運算；producer 的 prepare/infer 生命週期、評測與 run binding 留在
@@ -40,6 +42,10 @@ SEALED = {
                   "tile_rows": 4},
     "dare_ties_ta": {"density": 1.0, "lambda": 0.25, "sign_method": "total",
                      "rescale": True, "tile_rows": 16, "mask_block_rows": 8},
+    "pico_ta": {"reduction": "mean", "eps": 1e-12, "tile_rows": 16},
+    "lora_lego": {"output_rank": 16, "output_ref_rank": 8, "lego_seed": 0,
+                  "n_init": 10, "max_iter": 300, "parameter_reweight": True,
+                  "output_reweight": True, "eps": 1e-12, "tile_rows": 16},
 }
 CANONICAL_SEED = 42
 MERGE_METHODS = tuple(SEALED)
@@ -308,6 +314,208 @@ def materialize_dare_ties(pool, output_path, *, density, coefficient, sign_metho
 
 
 # ---------------------------------------------------------------------------
+# PICO + Task Arithmetic
+# ---------------------------------------------------------------------------
+def _low_rank_frobenius_norm(a_factor, b_factor, scaling):
+    """||scaling * B @ A||_F，不展開 B @ A。"""
+    aat = a_factor @ a_factor.mT
+    btb = b_factor.mT @ b_factor
+    squared = (aat * btb.mT).sum().clamp_min(0)
+    return squared.sqrt() * abs(float(scaling))
+
+
+def _validate_stacks(a_stack, b_stack, *, minimum_tasks=1):
+    if a_stack.ndim != 3 or b_stack.ndim != 3:
+        raise ValueError("a_stack 與 b_stack 都必須是三階張量")
+    if a_stack.shape[0] != b_stack.shape[0]:
+        raise ValueError("a_stack 與 b_stack 的任務數不同")
+    if a_stack.shape[1] != b_stack.shape[2]:
+        raise ValueError("a_stack 與 b_stack 的來源 rank 不同")
+    if a_stack.shape[0] < minimum_tasks:
+        raise ValueError(f"至少需要 {minimum_tasks} 個 adapter")
+
+
+def merge_pico_task_arithmetic_module(a_stack, b_stack, *, source_scaling,
+                                      reduction="mean", eps=1e-12):
+    """對單一模組做 PICO 校準、加總 task vector、再還原合併後的量級。"""
+    import torch
+
+    _validate_stacks(a_stack, b_stack, minimum_tasks=2)
+    if source_scaling <= 0:
+        raise ValueError("source_scaling 必須為正")
+    if reduction not in {"mean", "sum"}:
+        raise ValueError("reduction 只能是 mean 或 sum")
+
+    a = a_stack.float()
+    b = b_stack.float()
+    task_count, source_rank, in_features = a.shape
+    out_features = b.shape[1]
+    b_all = b.permute(1, 0, 2).reshape(out_features, task_count * source_rank)
+
+    u, singular_values, _ = torch.linalg.svd(b_all, full_matrices=False)
+    energy = singular_values.square()
+    energy_sum = energy.sum()
+    if float(energy_sum.detach().cpu()) <= eps:
+        calibrated_b_all = b_all
+    else:
+        sharing_scores = energy / energy_sum
+        attenuation = 1.0 / (1.0 + (task_count - 1) * sharing_scores)
+        projection = u.mT @ b_all
+        calibrated_b_all = b_all + u @ (
+            (attenuation - 1.0).unsqueeze(1) * projection)
+
+    calibrated_b_stack = (
+        calibrated_b_all.reshape(out_features, task_count, source_rank)
+        .permute(1, 0, 2).contiguous())
+    source_norms = torch.stack([
+        _low_rank_frobenius_norm(a[i], b[i], source_scaling)
+        for i in range(task_count)])
+    source_norm_mean = source_norms.mean()
+
+    merged_a = a.reshape(task_count * source_rank, in_features).contiguous()
+    merged_b = calibrated_b_stack.permute(1, 0, 2).reshape(
+        out_features, task_count * source_rank).contiguous()
+    if reduction == "mean":
+        merged_b = merged_b / task_count
+    calibrated_sum_norm = _low_rank_frobenius_norm(
+        merged_a, merged_b, source_scaling)
+    if float(calibrated_sum_norm.detach().cpu()) <= eps:
+        restoration = torch.ones((), device=merged_b.device, dtype=merged_b.dtype)
+    else:
+        restoration = source_norm_mean / calibrated_sum_norm
+    return merged_a, merged_b * restoration, float(restoration.detach().cpu())
+
+
+def materialize_pico_task_arithmetic(pool, output_path, *, reduction="mean",
+                                     eps=1e-12, device="cpu", tile_rows=16,
+                                     output_dtype=None):
+    """PICO 校準後的 exact dense delta。"""
+    import torch
+    output_dtype = output_dtype or torch.bfloat16
+    compute_device = torch.device(device)
+    tensors, reports = {}, []
+    for a_key in pool.a_keys:
+        a_stack, b_stack = _stacks(pool, a_key, compute_device, torch)
+        merged_a, merged_b, restoration = merge_pico_task_arithmetic_module(
+            a_stack, b_stack, source_scaling=pool.scaling,
+            reduction=reduction, eps=eps)
+        output = torch.empty((merged_b.shape[0], merged_a.shape[1]),
+                             dtype=output_dtype, device="cpu")
+        for start in range(0, merged_b.shape[0], tile_rows):
+            end = min(start + tile_rows, merged_b.shape[0])
+            tile = merged_b[start:end] @ merged_a
+            tile.mul_(pool.scaling)     # PICO 的因子沒有折進 scaling，這裡要乘
+            output[start:end].copy_(tile.to(device="cpu", dtype=output_dtype))
+        module_name = module_name_from_key(a_key)
+        tensors[f"{module_name}.delta_weight"] = output.contiguous()
+        reports.append({"module": module_name,
+                        "output_rank": int(merged_a.shape[0]),
+                        "magnitude_restoration": restoration})
+        del a_stack, b_stack, merged_a, merged_b
+        if compute_device.type == "cuda":
+            torch.cuda.empty_cache()
+    return _save(tensors, output_path, "pico_task_arithmetic",
+                 {"reduction": reduction, "module_reports": reports})
+
+
+# ---------------------------------------------------------------------------
+# LoRA-Lego
+# ---------------------------------------------------------------------------
+def merge_lego_module(a_stack, b_stack, *, source_scaling, output_rank,
+                      output_ref_rank, seed=0, n_init=10, max_iter=300,
+                      parameter_reweight=True, output_reweight=True, eps=1e-12):
+    """把逐 rank 的 MSU 分群，重建成一個 rank-k 的 LoRA 模組。"""
+    import numpy as np
+    import torch
+    from sklearn.cluster import KMeans
+
+    _validate_stacks(a_stack, b_stack)
+    if source_scaling <= 0 or output_rank <= 0 or output_ref_rank <= 0:
+        raise ValueError("scaling 與 rank 都必須為正")
+    task_count, source_rank, in_features = a_stack.shape
+    out_features = b_stack.shape[1]
+    pool_size = task_count * source_rank
+    if output_rank > pool_size:
+        raise ValueError("output_rank 不能超過 MSU 的總數")
+
+    adapter_weights = np.full(task_count, 1.0 / task_count, dtype=np.float64)
+    # sqrt(scaling) 折進 A 與 B 兩邊，因此重建出來的 delta 已含 scaling，
+    # 之後不可再乘一次。
+    scale_root = math.sqrt(float(source_scaling))
+    a = a_stack.detach().float().cpu().numpy() * scale_root
+    b = b_stack.detach().float().cpu().numpy() * scale_root
+    msus = np.concatenate([
+        a.reshape(pool_size, in_features),
+        b.transpose(0, 2, 1).reshape(pool_size, out_features),
+    ], axis=1).astype(np.float32, copy=False)
+    sample_weights = np.repeat(adapter_weights, source_rank)
+
+    kmeans = KMeans(n_clusters=output_rank, random_state=seed,
+                    n_init=n_init, max_iter=max_iter)
+    labels = kmeans.fit_predict(msus, sample_weight=sample_weights)
+    centers = kmeans.cluster_centers_.astype(np.float32, copy=True)
+
+    cluster_sizes = []
+    for cluster_index in range(output_rank):
+        mask = labels == cluster_index
+        cluster_sizes.append(int(mask.sum()))
+        if not parameter_reweight:
+            continue
+        center_norm = float(np.linalg.norm(centers[cluster_index], ord=np.inf))
+        member_norms = np.linalg.norm(msus[mask], ord=np.inf, axis=1)
+        member_weights = sample_weights[mask]
+        target_norm = float(
+            np.sum(member_norms * member_weights) / member_weights.sum())
+        centers[cluster_index] *= target_norm / max(center_norm, eps)
+
+    a_merged = centers[:, :in_features]
+    b_merged = centers[:, in_features:].T
+    output_factor = math.sqrt(float(output_ref_rank) / float(output_rank))
+    if output_reweight:
+        b_merged = b_merged * output_factor
+    else:
+        output_factor = 1.0
+    return (torch.from_numpy(a_merged).contiguous(),
+            torch.from_numpy(b_merged).contiguous(),
+            tuple(cluster_sizes), float(kmeans.inertia_), int(kmeans.n_iter_),
+            output_factor)
+
+
+def materialize_lego(pool, output_path, *, output_rank, output_ref_rank, seed,
+                     n_init, max_iter, parameter_reweight, output_reweight,
+                     eps=1e-12, tile_rows=16, output_dtype=None):
+    """把每個模組的 MSU 分群後重建成 exact dense delta。"""
+    import torch
+    output_dtype = output_dtype or torch.bfloat16
+    tensors, reports = {}, []
+    for a_key in pool.a_keys:
+        b_key = paired_key(a_key)
+        merged_a, merged_b, cluster_sizes, inertia, iterations, factor = (
+            merge_lego_module(
+                torch.stack([w[a_key] for w in pool.weights]),
+                torch.stack([w[b_key] for w in pool.weights]),
+                source_scaling=pool.scaling, output_rank=output_rank,
+                output_ref_rank=output_ref_rank, seed=seed, n_init=n_init,
+                max_iter=max_iter, parameter_reweight=parameter_reweight,
+                output_reweight=output_reweight, eps=eps))
+        output = torch.empty((merged_b.shape[0], merged_a.shape[1]),
+                             dtype=output_dtype, device="cpu")
+        for start in range(0, merged_b.shape[0], tile_rows):
+            end = min(start + tile_rows, merged_b.shape[0])
+            # scaling 已折進因子，這裡不再乘。
+            output[start:end].copy_(
+                (merged_b[start:end] @ merged_a).to(output_dtype))
+        module_name = module_name_from_key(a_key)
+        tensors[f"{module_name}.delta_weight"] = output.contiguous()
+        reports.append({"module": module_name, "output_rank": int(output_rank),
+                        "cluster_sizes": list(cluster_sizes),
+                        "inertia": inertia, "iterations": iterations,
+                        "output_reweight_factor": factor})
+    return _save(tensors, output_path, "lora_lego",
+                 {"output_rank": int(output_rank), "module_reports": reports})
+
+
+# ---------------------------------------------------------------------------
 # 共用
 # ---------------------------------------------------------------------------
 def _save(tensors, output_path, method, extra):
@@ -353,9 +561,24 @@ def merge_pool(method, pool, output_path, *, device="cpu", output_dtype=None,
             pool, output_path, thresholds=thresholds, coefficients=coefficients,
             tile_rows=sealed["tile_rows"], reduction=sealed["reduction"],
             device=device, output_dtype=output_dtype)
-    return materialize_dare_ties(
-        pool, output_path, density=sealed["density"],
-        coefficient=sealed["lambda"], sign_method=sealed["sign_method"],
-        seed=CANONICAL_SEED, rescale=sealed["rescale"],
-        tile_rows=sealed["tile_rows"], mask_block_rows=sealed["mask_block_rows"],
-        device=device, output_dtype=output_dtype)
+    if method == "dare_ties_ta":
+        return materialize_dare_ties(
+            pool, output_path, density=sealed["density"],
+            coefficient=sealed["lambda"], sign_method=sealed["sign_method"],
+            seed=CANONICAL_SEED, rescale=sealed["rescale"],
+            tile_rows=sealed["tile_rows"],
+            mask_block_rows=sealed["mask_block_rows"],
+            device=device, output_dtype=output_dtype)
+    if method == "pico_ta":
+        return materialize_pico_task_arithmetic(
+            pool, output_path, reduction=sealed["reduction"],
+            eps=sealed["eps"], device=device, tile_rows=sealed["tile_rows"],
+            output_dtype=output_dtype)
+    # lora_lego：KMeans 在 CPU 上執行，device 對它沒有作用。
+    return materialize_lego(
+        pool, output_path, output_rank=sealed["output_rank"],
+        output_ref_rank=sealed["output_ref_rank"], seed=sealed["lego_seed"],
+        n_init=sealed["n_init"], max_iter=sealed["max_iter"],
+        parameter_reweight=sealed["parameter_reweight"],
+        output_reweight=sealed["output_reweight"], eps=sealed["eps"],
+        tile_rows=sealed["tile_rows"], output_dtype=output_dtype)
