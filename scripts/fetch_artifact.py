@@ -97,7 +97,8 @@ def main() -> None:
                         help="要取得哪一個 condition（ta / ties / dare-ties …）")
     parser.add_argument("--run-id", default=None,
                         help="指定 run；省略時遠端只有一個 run 才自動採用")
-    parser.add_argument("--artifact-root", required=True)
+    parser.add_argument("--artifact-root", default=None,
+                        help="下載到哪裡；--list 時不需要")
     parser.add_argument("--revision", default=None)
     parser.add_argument("--token", default=os.environ.get("HF_TOKEN"),
                         help="私有 repo 的存取權杖；預設讀環境變數 HF_TOKEN")
@@ -112,6 +113,8 @@ def main() -> None:
         for run in runs:
             print(run)
         return
+    if not args.artifact_root:
+        parser.error("下載需要 --artifact-root")
     run_id = args.run_id
     if run_id is None:
         if len(runs) != 1:
