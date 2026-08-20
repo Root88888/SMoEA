@@ -52,7 +52,7 @@ results/                    評測與批次輸出
 docs/                       架構圖與文件
 ```
 
-## 上手流程
+## 環境建置與執行
 
 1. git clone
 ```bash
@@ -125,6 +125,53 @@ docs/                       架構圖與文件
    `rejection_condition_id` 與 `rejection_run_id`，可追溯到具體的權重。
  
 之後每次開機僅需 `conda activate smoea`；步驟 2、3 為一次性作業。
+
+## 測試集全量路由實測與評估 Routing Zone Outcome and Accuracy/Ablation/Baseline Comparison
+
+### 1. 主評測
+
+```bash
+# 1a. 分區（CPU 數分鐘）：全部測試樣本分四區、產送審佇列
+python scripts/eval_router.py --mode decide 2>&1 | tee results/eval_decide.txt
+
+# 1b. 送審打分（GPU 數小時；中斷重跑自動續）：裁決 LLM 對佇列逐筆三題是非
+python scripts/eval_router.py --mode score 2>&1 | tee results/eval_score.txt
+
+# 1c. 結算
+python scripts/eval_router.py --mode run 2>&1 | tee results/eval_run.txt
+```
+
+### 2. Ablation 變體資產準備（無多質心版；一次性）
+
+```bash
+mkdir -p assets_ablate_nomc
+cp assets/emb_*.npz assets/unit_descriptions.json assets_ablate_nomc/
+python scripts/build_router_assets.py \
+    --set paths.assets_dir=assets_ablate_nomc --set fingerprint.k_max=1
+```
+
+### 3. 五個 Ablation 變體
+
+```bash
+for AB in gray_reject gray_route no_lexical no_direct no_multicentroid; do
+  python scripts/eval_router.py --mode decide --ablate $AB
+  python scripts/eval_router.py --mode score  --ablate $AB
+  python scripts/eval_router.py --mode run    --ablate $AB
+done
+```
+
+### 4. 兩支 Baseline
+
+```bash
+python scripts/eval_baseline_mean_embedding.py --mode eval --tau 0.72
+python scripts/eval_baseline_bm25_voting.py    --mode eval --ratio_tau 0.5
+```
+
+### 5. 匯總數據
+
+```bash
+python scripts/export_report_data.py        # 輸出 results/report_data.json
+```
 
 ## 拒絕分支（Model Merging）
 
@@ -254,53 +301,6 @@ BLEU；GPT judge 不會被自動呼叫。
 
 要跑完整 benchmark 前，先執行一次 `python scripts/map_ood_aliases.py --dataset-dir dataset`
 建立 OOD `task149` 的內部別名。
-
-## 重現路由結果 Routing Zone Outcome and Accuracy/Ablation/Baseline Comparison
-
-### 1. 主評測
-
-```bash
-# 1a. 分區（CPU 數分鐘）：全部測試樣本分四區、產送審佇列
-python scripts/eval_router.py --mode decide 2>&1 | tee results/eval_decide.txt
-
-# 1b. 送審打分（GPU 數小時；中斷重跑自動續）：裁決 LLM 對佇列逐筆三題是非
-python scripts/eval_router.py --mode score 2>&1 | tee results/eval_score.txt
-
-# 1c. 結算
-python scripts/eval_router.py --mode run 2>&1 | tee results/eval_run.txt
-```
-
-### 2. Ablation 變體資產準備（無多質心版；一次性）
-
-```bash
-mkdir -p assets_ablate_nomc
-cp assets/emb_*.npz assets/unit_descriptions.json assets_ablate_nomc/
-python scripts/build_router_assets.py \
-    --set paths.assets_dir=assets_ablate_nomc --set fingerprint.k_max=1
-```
-
-### 3. 五個 Ablation 變體
-
-```bash
-for AB in gray_reject gray_route no_lexical no_direct no_multicentroid; do
-  python scripts/eval_router.py --mode decide --ablate $AB
-  python scripts/eval_router.py --mode score  --ablate $AB
-  python scripts/eval_router.py --mode run    --ablate $AB
-done
-```
-
-### 4. 兩支 Baseline
-
-```bash
-python scripts/eval_baseline_mean_embedding.py --mode eval --tau 0.72
-python scripts/eval_baseline_bm25_voting.py    --mode eval --ratio_tau 0.5
-```
-
-### 5. 匯總數據
-
-```bash
-python scripts/export_report_data.py        # 輸出 results/report_data.json
-```
 
 ## 批次推論結果評測 (LLM-as-a-judge)
 
