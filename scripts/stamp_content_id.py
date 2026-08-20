@@ -19,7 +19,7 @@ producer 的原始 run_id 保留在 provenance 欄位。
 
   python scripts/stamp_content_id.py --method ties \
       --producer <producer merged_model 目錄> --report <ties_report.json> \
-      --adapter-dir adapter --out-root /shared/artifacts/staged
+      --out-root /shared/artifacts/staged
 """
 
 from __future__ import annotations
@@ -34,6 +34,7 @@ import sys
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REPO)
 
+from router.config import add_config_args, load_config  # noqa: E402
 from system.adapter_pool import (  # noqa: E402
     load_adapter_pool,
     manifest_from_adapter_dir,
@@ -52,18 +53,24 @@ def content_run_id(weight_path: str) -> str:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser()
+    parser = add_config_args(argparse.ArgumentParser())
     parser.add_argument("--method", required=True, choices=list(MERGE_METHODS))
     parser.add_argument("--producer", required=True)
     parser.add_argument("--report", required=True,
                         help="verify_against_producer.py 的報告；必須是 PASS")
-    parser.add_argument("--adapter-dir", default=None)
+    parser.add_argument("--adapter-dir", default=None,
+                        help="預設取設定檔的 system.adapter_dir")
     parser.add_argument("--manifest", default=None)
     parser.add_argument("--out-root", required=True)
     parser.add_argument("--expected-adapters", type=int, default=150)
     args = parser.parse_args()
-    if bool(args.manifest) == bool(args.adapter_dir):
-        parser.error("請擇一提供 --manifest 或 --adapter-dir")
+    cfg = load_config(args.config, args.set)
+    if args.manifest and args.adapter_dir:
+        parser.error("--manifest 與 --adapter-dir 只能擇一")
+    if not args.manifest and not args.adapter_dir:
+        # 設定檔已經定義了 adapter 的位置（InferenceEngine 也用同一個值），
+        # 不該再要求使用者指定一次。
+        args.adapter_dir = cfg["system"]["adapter_dir"]
 
     report = json.loads(open(args.report, encoding="utf-8").read())
     if report.get("method") != args.method:

@@ -2,29 +2,46 @@
 # =============================================================================
 # scripts/publish_artifacts.sh — 驗證通過後，一次完成標記與上傳
 #
-#   bash scripts/publish_artifacts.sh <org>/<repo> [驗證報告目錄] [暫存目錄]
+#   bash scripts/publish_artifacts.sh <org>/<repo> <驗證報告目錄> <暫存目錄> \
+#       <producer runs 根目錄> [方法…]
 #
 # 依序做三件事，任一步失敗即停止：
 #   1. 檢查每個方法的等價驗證報告都是 PASS（bitwise_identical=true）
 #   2. 以內容定址的 run_id 重新標記（權重用 hardlink，不佔額外空間）
-#   3. 上傳到私有 Hugging Face repo
+#   3. 上傳到 Hugging Face repo（push_artifact.py 預設公開，--private 轉私有）
 #
-# 前置：huggingface-cli login（或設定 HF_TOKEN）。
+# producer 的參考版本以 <runs 根目錄>/<方法>/<run_id>/prepare/merged_model 尋找。
+# 同一個方法底下有多個 run 時停下來要求指定，不會自己挑一個——這與
+# fetch_artifact.py 的規矩一致。
+#
+# 前置：hf auth login（或設定 HF_TOKEN）。
 # =============================================================================
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-REPO_ID="${1:?用法：bash scripts/publish_artifacts.sh <org>/<repo> [報告目錄] [暫存目錄]}"
-VERIFY_DIR="${2:-/livingrooms/tincan/smoea/verify}"
-STAGE_DIR="${3:-/livingrooms/tincan/smoea/artifacts/staged}"
+USAGE="用法：bash scripts/publish_artifacts.sh <org>/<repo> <報告目錄> <暫存目錄> <producer runs 根目錄> [方法…]"
+REPO_ID="${1:?$USAGE}"
+VERIFY_DIR="${2:?$USAGE}"
+STAGE_DIR="${3:?$USAGE}"
+RUNS_ROOT="${4:?$USAGE}"
+shift 4
+METHODS="${*:-ta ties_only dare_ties_ta}"
 
-R=/livingrooms/tincan/smoea/integration-runs/2026-08-19-unified-1024-random10-v3/runs
-declare -A PROD=(
-  [ta]="$R/ta/f61f5fe81f58fdba/prepare/merged_model"
-  [ties_only]="$R/ties_only/e3de085e3caeaf23/prepare/merged_model"
-  [dare_ties_ta]="$R/dare_ties_ta/6317f9cbaefe06c2/prepare/merged_model"
-)
-METHODS="ta ties_only dare_ties_ta"
+# producer 的參考版本由目錄結構找出來，不寫死 run_id：同一個方法有多個 run
+# 時停下來要求指定，不自己挑一個（與 fetch_artifact.py 同一條規矩）。
+declare -A PROD=()
+for M in $METHODS; do
+    MATCHES=()
+    while IFS= read -r D; do MATCHES+=("$D"); done < <(
+        find "$RUNS_ROOT/$M" -mindepth 3 -maxdepth 3 -type d \
+             -path "*/prepare/merged_model" 2>/dev/null | sort)
+    case ${#MATCHES[@]} in
+      0) echo "✗ $RUNS_ROOT/$M 底下找不到 prepare/merged_model"; exit 1 ;;
+      1) PROD[$M]="${MATCHES[0]}" ;;
+      *) echo "✗ $M 有多個 run，請把 <runs 根目錄> 指到只含一個的位置："
+         printf '     %s\n' "${MATCHES[@]}"; exit 1 ;;
+    esac
+done
 
 echo "== 1/3 檢查驗證報告 =="
 for M in $METHODS; do
@@ -53,11 +70,11 @@ echo "== 2/3 以內容定址 run_id 重新標記 =="
 for M in $METHODS; do
     python scripts/stamp_content_id.py --method "$M" \
         --producer "${PROD[$M]}" --report "$VERIFY_DIR/${M}_report.json" \
-        --adapter-dir adapter --out-root "$STAGE_DIR"
+        --out-root "$STAGE_DIR"
 done
 
 echo
-echo "== 3/3 上傳到 $REPO_ID（私有）=="
+echo "== 3/3 上傳到 $REPO_ID =="
 ARGS=()
 for M in $METHODS; do
     DIR="$(find "$STAGE_DIR/$M" -type d -name merged_model | head -1)"
