@@ -16,12 +16,8 @@ router/                     路由決策層
   verifier.py               送審 LLM 是非題裁決
   metrics.py                評測計分
 system/                     路由之後的執行層
-  inference.py              InferenceEngine：base model 常駐、per-task adapter 熱切換、生成、拒絕方法啟用
-  rejection.py              拒絕分支（Rejection Runtime）唯一接入點
-  merging.py                七種 merging 方法的權重運算（ta / ties_only / dare_ties_ta 等）
-  merged_model.py           合成 artifact 的格式契約（result.json 讀寫與驗證）
-  arrow_runtime.py          Arrow / Taskwise-K16 Arrow 執行期
-  adapter_pool.py registry.py   adapter 池與可選拒絕方法的清單檔
+  inference.py              InferenceEngine：base model 常駐、per-task adapter 熱切換、生成
+  rejection.py              拒絕分支（Model Merging）介面
 scripts/
   check_env.py              環境體檢
   selftest_*.py             三支自測（零資料零 GPU）
@@ -29,19 +25,14 @@ scripts/
   eval_router.py            路由評測三段
   eval_baseline_*.py        兩支 baseline
   verify_flow_table.py      評測結果獨立重放驗證
-  eval_outputs_llm_judge.py 批次推論輸出的 LLM 閱卷
-  merge_pool150.py fetch_artifact.py   合成 artifact 的本機建置／遠端下載
-  smoke_rejection_methods.py benchmark_rejection.py   拒絕方法煙測與 benchmark
   plot_centroids.py         質心結構圖
-tests/                      拒絕分支單元測試（python -m unittest discover -s tests）
 dataset/                    資料（不進 git）；請建立 dataset 目錄以及 dataset/train_data/ 和 dataset/test_data/
   train_data/task{N}_train.json
   test_data/task{N}_test.json
 adapter/task{N}/            LoRA adapters（不進 git）：請建立 adapter 目錄，將 task{N} 直接放在 adapter/ 下，task 內如有多個 checkpoint-*/ 自動取最新
-artifacts/                  拒絕分支的合成權重與清單檔（不進 git；由 setup 準備）
 assets/                     路由建置產物；unit_descriptions.json 為人工校訂的單位說明書
 results/                    評測與批次輸出
-docs/                       架構圖與文件（含拒絕分支設計文件 docs/adr/）
+docs/                       架構圖與文件
 ```
 
 ## 上手流程
@@ -83,23 +74,6 @@ docs/                       架構圖與文件（含拒絕分支設計文件 doc
    （首次 10-20 分鐘）、環境體檢、查詢嵌入計算與路由資產建置
    （首次 GPU 數分鐘）。結尾印出「全部就緒」即完成；中途停止時
    依提示處理後重跑即可（已完成步驟自動跳過）。
-
-   拒絕分支（Rejection Runtime）預設使用 base model 作答。若要使用
-   合成權重（merged artifact），另以參數準備：
-
-```bash
-   bash scripts/setup_workspace.sh --artifacts merge                          # 用本機 adapter 建置合成權重
-   bash scripts/setup_workspace.sh --artifacts fetch --hf-repo <org>/<repo>   # 或自 Hugging Face 下載備好的
-```
-
-   | 參數 | 意思 |
-   |---|---|
-   | `--artifacts merge` | 本機建置 `ta`、`ties_only`、`dare_ties_ta`；其他方法用 `--methods` 指定 |
-   | `--artifacts fetch` | 從 Hugging Face repo 下載備好的 artifact，搭配 `--hf-repo` |
-   | `--methods ta,ties_only` | 限定要準備哪幾個方法 |
-
-   不加 `--artifacts` 時拒絕分支只有 `base`；之後隨時可補。
-   細節見 `docs/`（拒絕分支設計文件與方法說明）。
    
 4. 單筆執行互動
 ```bash
@@ -109,22 +83,15 @@ docs/                       架構圖與文件（含拒絕分支設計文件 doc
 
    首次執行自動下載生成與裁決模型（各約 16GB）。輸入任務內 query
    應看到 Router 判定與模型回答；輸入無關文字應看到進入
-   rejection inference 分支的訊息與作答。
-
-   session 內指令：`:rejection` 顯示目前生效的拒絕方法、
-   `:rejection list` 列出可選項目、`:rejection use <id>` 切換
-   （切換前完整驗證、失敗不生效、絕不靜默退回 base）。
+   Model Merging 分支的訊息（即 `system/rejection.py` 的呼叫點）。
  
 5. 批次執行
 ```bash
    python main.py --mode batch          # --tasks a,b 只跑任務a,b、--limit n 每個任務test set只取前n筆，這些沒加就是全跑
-                                        # --artifact <id> 指定這一批拒絕樣本共用的合成權重（不加＝base）
 ```
  
    逐筆結果（含 Router 診斷與模型輸出）落於
-   `results/main_batch_outputs.jsonl`。拒絕樣本另帶
-   `rejection_method / rejection_condition_id / rejection_run_id`
-   三欄，記錄該筆是由哪一組權重作答，逐筆可追溯。
+   `results/main_batch_outputs.jsonl`。
  
 之後每次開機僅需 `conda activate smoea`；步驟 2、3 為一次性作業。
 
@@ -205,17 +172,15 @@ python scripts/eval_outputs_llm_judge.py --batch results/main_batch_outputs_{時
 - `--workers 8`　併發請求數
 
 輸出 `results/llm_judge_{時間戳}.json`，時間戳繼承所評 batch 檔的產出時間。
-評分結果按 routed（路由至單一 adapter）與 rejected_*（拒絕分支、
-依方法細分）分組統計。
 
 ## 從哪裡下手
 
-- **拒絕分支（Rejection Runtime）**：入口 `system/rejection.py`——
-  Router 拒絕的請求由 `system.rejection_method` 指定的方法作答
-  （base / merged artifact / Arrow），權重運算在 `system/merging.py`、
-  格式契約在 `system/merged_model.py`；設計文件見 `docs/adr/`，
-  單元測試 `python -m unittest discover -s tests`。
+- **拒絕分支（Model Merging）**：入口 `system/rejection.py`——
+  介面、可用的診斷素材、與已備妥的合成/載入/生成機制
+  （`InferenceEngine.load_adapters_merged`）全寫在該檔檔頭；
+  只需實作「用哪些 adapter、各配多少權重」的決策。
 - **生成行為**（prompt、解碼參數、adapter 解析）：`system/inference.py`。
 - **新增任務**：樣本放 `dataset/`、adapter 放 `adapter/task{N}/`、
   重跑 `build_router_assets.py` 即完成擴充（送審裁決另需在
   `assets/unit_descriptions.json` 補該任務所屬單位的說明）。
+  
