@@ -94,7 +94,7 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--repo", required=True, help="Hugging Face repo id")
     parser.add_argument("--condition", required=True,
-                        help="要取得哪一個 condition（ta / ties / dare-ties …）")
+                        help="要取得哪一個 condition（ta / ties_only / dare_ties_ta …）")
     parser.add_argument("--run-id", default=None,
                         help="指定 run；省略時遠端只有一個 run 才自動採用")
     parser.add_argument("--artifact-root", default=None,

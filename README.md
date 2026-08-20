@@ -32,15 +32,22 @@
 
 權重在開始回答之前就固定了。同樣的輸入會得到同樣的輸出。
 
-| 名稱 | 疊了什麼 | 實際做的事 |
-|---|---|---|
-| `base` | 不疊任何東西 | 直接用底層模型回答。不需要額外檔案，是預設值。 |
-| `ta` | 一組固定權重 | 把 150 個任務 adapter 直接平均成一組權重。所有任務的調整混在一起，不做取捨。 |
-| `ties` | 一組固定權重 | 也是把 150 個混起來，但先丟掉每個 adapter 裡數值偏小的部分（只留最大的兩成），再讓剩下的部分投票決定每個位置該往哪個方向調整，方向和多數不一致的就不採用，最後整體縮到約三成。目的是減少不同任務互相拉扯。 |
-| `dare-ties` | 一組固定權重 | 流程是「隨機丟掉一部分數值 → 把剩下的放大補回總量 → 投票」。交付設定的丟棄比例是 0，也就是隨機丟棄實際上關閉了，所以真正在做的是「全部保留 → 投票 → 整體縮小到四分之一」。它沒有 `ties` 那個「只留最大兩成」的步驟。 |
+| 名稱 | 實際做的事 |
+|---|---|
+| `base` | 不疊任何東西，直接用底層模型回答。不需要額外檔案，是預設值。 |
+| `ta` | Task Arithmetic。把 150 個任務 adapter 直接平均成一組權重，所有任務的調整混在一起，不做取捨。 |
+| `pico_ta` | 在 Task Arithmetic 之前先做一層低秩處理再合併。 |
+| `ties_only` | 先丟掉每個 adapter 裡數值偏小的部分（只留最大的兩成），再讓剩下的部分投票決定每個位置該往哪個方向調整，方向和多數不一致的就不採用，最後整體縮到約三成。目的是減少不同任務互相拉扯。名稱裡的 only 表示**只做 TIES、後面沒有再接最佳化**，用來和 `adamerging_pp` 區分。 |
+| `dare_ties_ta` | 流程是「隨機丟掉一部分數值 → 把剩下的放大補回總量 → 投票 → 接 Task Arithmetic」。交付設定的丟棄比例是 0，也就是隨機丟棄實際上關閉了，所以真正在做的是「全部保留 → 投票 → 整體縮小到四分之一」。它沒有 `ties_only` 那個「只留最大兩成」的步驟。 |
+| `lora_lego` | LoRA-Lego 的合併方式。 |
+| `adamerging_pp` | 以 TIES 當前處理，再對合併係數做最佳化。需要事先最佳化好的權重檔。 |
 
-`ta`、`ties`、`dare-ties` 各需要一個約 3.76 GB 的權重檔（見〈準備拒絕分支要用的檔案〉）。
+以上除了 `base` 之外，每一種各需要一個約 3.76 GB 的權重檔（見〈準備拒絕分支要用的檔案〉）。
 `base` 不需要任何額外檔案。
+
+其中 `ta`、`ties_only`、`dare_ties_ta` **可以用本機的 adapter 自己算**；其餘只接受事先
+備好的權重檔。另有一個 `lorahub`，它的設定綁定特定資料集與隨機種子，沒有通用的線上
+狀態，因此只用於 benchmark，不列入拒絕分支的選項。
 
 #### 二、Arrow routing（兩種變體）
 
@@ -54,6 +61,8 @@
 |---|---|---|
 | `arrow` | 150 個 adapter 全部 | 那 150 個 adapter 本身，加一份事先算好的索引檔 |
 | `taskwise_k16_arrow` | 16 個代表 | 16 個代表 adapter 與索引檔（約 275 MB） |
+
+（`arrow` 也常稱作 Direct Arrow，「direct」是相對於 `taskwise_k16_arrow` 的分群版本。）
 
 `taskwise_k16_arrow` 是先把 150 個 adapter 分成 16 群、每群選一個代表，記憶體佔用小很多，
 代價是判斷的粒度較粗。哪 16 個當代表是離線分群決定的，本系統不做分群，只讀現成的。
@@ -153,7 +162,7 @@ docs/                       架構圖與文件
 
    拒絕分支要用的檔案在這一步準備好，不是等到真的拒絕時才去拿——服務執行中
    不會對外連線。`--artifacts merge` 以 `adapter/` 線上合成
-   `ta`、`ties`、`dare-ties`（每份約 3.76 GB、需 GPU，已存在者自動跳過）；
+   `ta`、`ties_only`、`dare_ties_ta`（每份約 3.76 GB，已存在者自動跳過）；
    `--artifacts fetch` 改為自 Hugging Face repo 取得現成的。兩者都會登記進
    `<artifact-root>/registry.json`，執行期以 id 選用。不加這個參數時拒絕分支
    只有 base，之後隨時可以單獨補跑。
@@ -216,7 +225,7 @@ docs/                       架構圖與文件
 
 ## 準備拒絕分支要用的檔案
 
-`ta`、`ties`、`dare-ties` 這三個方法各需要一個約 3.76 GB 的權重檔。**取得方式有兩種，
+`ta`、`ties_only`、`dare_ties_ta` 這三個方法各需要一個約 3.76 GB 的權重檔。**取得方式有兩種，
 選一種就好，結果完全一樣**：
 
 - **方式一：下載** —— 需要網路與 Hugging Face 存取權。
@@ -245,8 +254,8 @@ hf auth login
 下載並登記：
 
 ```bash
-python scripts/fetch_artifact.py --repo <org>/<repo> --list --condition ties
-python scripts/fetch_artifact.py --repo <org>/<repo> --condition ties \
+python scripts/fetch_artifact.py --repo <org>/<repo> --list --condition ties_only
+python scripts/fetch_artifact.py --repo <org>/<repo> --condition ties_only \
   --artifact-root <本機路徑> --registry <本機路徑>/registry.json
 ```
 
@@ -260,18 +269,18 @@ python scripts/fetch_artifact.py --repo <org>/<repo> --condition ties \
 不需要網路。把那 150 個 adapter 放在 `adapter/task{N}/` 之下即可：
 
 ```bash
-python scripts/merge_pool150.py --method ties --adapter-dir adapter \
+python scripts/merge_pool150.py --method ties_only --adapter-dir adapter \
   --artifact-root <本機路徑> \
-  --registry <本機路徑>/registry.json --register-as ties \
+  --registry <本機路徑>/registry.json --register-as ties_only \
   --set system.dtype=bfloat16
 ```
 
-`--method` 三選一：`ta`、`ties`、`dare-ties`。三個都要就跑三次。
+`--method` 三選一：`ta`、`ties_only`、`dare_ties_ta`。三個都要就跑三次。
 
 **選 CPU 還是 GPU**：預設走 GPU（`--device cuda`）。沒有顯卡就加 `--device cpu`，
-結果一樣。`ties` 需要約 7.5 GB 顯示記憶體，用 GPU 的話顯卡至少要 12 GB。
+結果一樣。`ties_only` 需要約 7.5 GB 顯示記憶體，用 GPU 的話顯卡至少要 12 GB。
 
-三個方法裡 `ties` 明顯最花時間（它要幫 150 個任務各算一次門檻），跑之前先預留時間。
+三個方法裡 `ties_only` 明顯最花時間（它要幫 150 個任務各算一次門檻），跑之前先預留時間。
 這是產生權重檔的一次性成本，之後回答請求時不會再做。
 
 已經算過的不會重算：程式會比對 adapter 的內容，同一批 adapter 算過就直接沿用。
@@ -295,20 +304,20 @@ python main.py --mode interactive --set system.dtype=bfloat16
 ```text
 :rejection              顯示目前使用哪一個
 :rejection list         列出可選的項目（* 標示目前生效者）
-:rejection use ties     切換；底層模型不重載，幾秒完成
+:rejection use ties_only  切換；底層模型不重載，幾秒完成
 ```
 
 批次模式整批共用同一個：
 
 ```bash
-python main.py --mode batch --artifact ties
+python main.py --mode batch --artifact ties_only
 ```
 
 benchmark 也是同一個寫法：
 
 ```bash
-python scripts/run_rejection_benchmark.py --artifact ties \
-  --benchmark-root <benchmark 資料目錄> --output-dir results/rejection-ties
+python scripts/run_rejection_benchmark.py --artifact ties_only \
+  --benchmark-root <benchmark 資料目錄> --output-dir results/rejection-ties_only
 ```
 
 權重檔放在別的地方（例如共用儲存）時，才需要覆蓋預設：
@@ -357,9 +366,9 @@ python scripts/migrate_artifact_manifest.py --scan <權重檔所在目錄>
 
 ```bash
 python scripts/push_artifact.py --repo <org>/<repo> --dry-run \
-  --artifact <本機路徑>/ties/<編號>/prepare/merged_model
+  --artifact <本機路徑>/ties_only/<編號>/prepare/merged_model
 python scripts/push_artifact.py --repo <org>/<repo> \
-  --artifact <本機路徑>/ties/<編號>/prepare/merged_model
+  --artifact <本機路徑>/ties_only/<編號>/prepare/merged_model
 ```
 
 只會建立私有 repo。加上 `--dry-run` 是空跑：檢查檔案、算出會傳到哪個路徑、加總大小，

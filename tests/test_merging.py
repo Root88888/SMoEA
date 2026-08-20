@@ -98,14 +98,14 @@ class MergingTests(unittest.TestCase):
                 self.assertEqual(report["status"], "complete")
 
     def test_merging_the_same_pool_twice_is_bit_identical(self):
-        first = merge_pool("dare-ties", self.pool, self.root / "d1.safetensors")
-        second = merge_pool("dare-ties", self.pool, self.root / "d2.safetensors")
+        first = merge_pool("dare_ties_ta", self.pool, self.root / "d1.safetensors")
+        second = merge_pool("dare_ties_ta", self.pool, self.root / "d2.safetensors")
 
         self.assertEqual(first["output_sha256"], second["output_sha256"])
 
     def test_ties_keeps_only_the_agreed_signs(self):
         out = self.root / "ties.safetensors"
-        report = merge_pool("ties", self.pool, out)
+        report = merge_pool("ties_only", self.pool, out)
 
         selected = sum(item["selected_coordinates"]
                        for item in report["module_reports"])
@@ -243,10 +243,10 @@ class SealedHyperparameterTests(unittest.TestCase):
 
     PRODUCER_VALUES = {
         "ta": {"lambda": 1.0, "reduction": "mean"},
-        "ties": {"lambda": 0.3, "density": 0.2, "reduction": "disjoint_mean",
-                 "tile_rows": 4},
-        "dare-ties": {"density": 1.0, "lambda": 0.25, "sign_method": "total",
-                      "rescale": True, "tile_rows": 16, "mask_block_rows": 8},
+        "ties_only": {"lambda": 0.3, "density": 0.2, "reduction": "disjoint_mean",
+                      "tile_rows": 4},
+        "dare_ties_ta": {"density": 1.0, "lambda": 0.25, "sign_method": "total",
+                         "rescale": True, "tile_rows": 16, "mask_block_rows": 8},
     }
 
     def test_sealed_values_match_the_producer(self):
@@ -280,6 +280,50 @@ class SealedHyperparameterTests(unittest.TestCase):
 
         # 池變兩倍、內容相同 → mean 之後應該不變（sum 的話會變兩倍）
         torch.testing.assert_close(first, second, rtol=1e-5, atol=1e-5)
+
+
+class ManifestMigrationTests(unittest.TestCase):
+    """補寫舊 manifest 時的 dtype 命名必須與 torch 一致。"""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+        self.addCleanup(self._tmp.cleanup)
+
+    def test_dtype_is_written_in_torch_naming_not_safetensors(self):
+        """safetensors 叫 BF16、torch 叫 bfloat16——混用會讓載入時比對失敗。"""
+        import subprocess
+        import sys as _sys
+
+        pool = SyntheticPool(self.root / "pool").load()
+        directory = self.root / "merged_model"
+        delta = self.root / "delta.safetensors"
+        merge_pool("ta", pool, delta)
+        write_dense_delta_artifact(
+            directory, source=delta, condition_id="ta", run_id="r",
+            base_model_name="base", base_model_revision="local",
+            base_model_config_sha256=DIGEST, torch_dtype="bfloat16")
+
+        # 還原成舊格式：拿掉 inference、把 tensor_name 併回 name
+        payload = json.loads((directory / "result.json").read_text(encoding="utf-8"))
+        payload.pop("inference")
+        payload["modules"] = [
+            {"name": m["tensor_name"], "shape": m["shape"], "dtype": m["dtype"]}
+            for m in payload["modules"]
+        ]
+        (directory / "result.json").write_text(
+            json.dumps(payload), encoding="utf-8")
+
+        subprocess.run(
+            [_sys.executable, "scripts/migrate_artifact_manifest.py", str(directory)],
+            check=True, capture_output=True)
+
+        migrated = json.loads((directory / "result.json").read_text(encoding="utf-8"))
+        self.assertEqual(migrated["inference"]["torch_dtype"], "bfloat16")
+        self.assertNotEqual(migrated["inference"]["torch_dtype"], "bf16")
+        # 補完後必須能通過正式驗證器
+        artifact = load_merged_model_artifact(directory)
+        self.assertEqual(artifact.torch_dtype, artifact.modules[0].dtype)
 
 
 if __name__ == "__main__":

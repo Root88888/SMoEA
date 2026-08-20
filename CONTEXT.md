@@ -66,7 +66,7 @@ answer-free full prompt → Router ──命中(Accept)──→ Task Adapter �
 | **Merged Artifact** | 一個 `prepare/merged_model/` 目錄，內含 `result.json` 契約（schema_version、format、condition_id、run_id、base_model 指紋、inference 設定、weights 的大小與 sha256、modules 清單）。`rejection_method=artifact` 使用它 |
 | **Artifact Format** | Merged Artifact 的兩種格式：`dense_delta_v1`（整層 dense 差值，forward hook 疊加）與 `peft_adapter_v1`（LoRA A/B 成對） |
 | **Arrow Assets** | Direct Arrow / Taskwise-K16 用的 `prepare/` 目錄（`method.json` + `prototypes.safetensors`，K16 另有 16 個代表 adapter），加上 Direct Arrow 需要的 ordered adapter manifest |
-| **Condition** | 產生 artifact 的方法身分（`ta`、`ties_only`、`dare_ties_ta`、`arrow`…），記為 `condition_id` |
+| **Condition** | 產生 artifact 的方法身分，記為 `condition_id`。**一律使用 producer 的名稱**（`ta`／`pico_ta`／`ties_only`／`dare_ties_ta`／`adamerging_pp`／`lora_lego`／`arrow`／`taskwise_k16_arrow`），不另立簡寫。`ties_only` 的 only 指「只做 TIES、不接最佳化」，與 `adamerging_pp` 區分；`dare_ties_ta` 的 ta 指後面接 Task Arithmetic——簡寫會弄丟這些資訊 |
 | **Run** | 同一 condition 的一次具體產出，記為 `run_id`。**（condition_id, run_id）是 artifact 的身分**，會寫進每筆批次輸出 |
 | **Prepared（離線預備）** | artifact 由 producer 事先產生並帶 checksum |
 | **Runtime-computed（線上現算）** | 啟動時由原始 adapters 現場推導出來的產物，`run_id` 記為 `runtime-computed`。Direct Arrow 的 prototypes 走這條 |

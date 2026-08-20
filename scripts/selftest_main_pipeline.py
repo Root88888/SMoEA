@@ -55,14 +55,14 @@ class StubEngine:
         return {"id": self.selected or "(config)", **self.ensure_identity()}
 
     def select_rejection(self, entry_id):
-        if entry_id != "ties":
+        if entry_id != "ties_only":
             raise MergedModelError(f"registry 沒有 id={entry_id!r} 的項目")
         self.selected = entry_id
         self.switches.append(f"select:{entry_id}")
         return self.current_rejection()
 
     def ensure_identity(self):
-        if self.selected == "ties":
+        if self.selected == "ties_only":
             return {"method": "artifact", "condition_id": "ties_only",
                     "run_id": "stub-run", "format": "dense_delta_v1"}
         return {"method": "base", "condition_id": "base", "run_id": None,
@@ -137,7 +137,7 @@ def main():
           f"（rejection output 完整）；診斷鍵齊全；model source 與路由一致")
 
     # ---- registry 選擇（ADR-0001）：整批指定同一個 artifact ----
-    M.run_batch(cfg, rt, tasks_arg=None, limit=None, artifact="ties")
+    M.run_batch(cfg, rt, tasks_arg=None, limit=None, artifact="ties_only")
     lines = [json.loads(l) for l in open(out, encoding="utf-8")]
     rejected = [l for l in lines if l["routed_to"] is None]
     assert rejected, "合成資料沒有拒絕樣本，無法驗證 artifact 選擇"

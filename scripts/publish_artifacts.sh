@@ -21,10 +21,10 @@ STAGE_DIR="${3:-/livingrooms/tincan/smoea/artifacts/staged}"
 R=/livingrooms/tincan/smoea/integration-runs/2026-08-19-unified-1024-random10-v3/runs
 declare -A PROD=(
   [ta]="$R/ta/f61f5fe81f58fdba/prepare/merged_model"
-  [ties]="$R/ties_only/e3de085e3caeaf23/prepare/merged_model"
-  [dare-ties]="$R/dare_ties_ta/6317f9cbaefe06c2/prepare/merged_model"
+  [ties_only]="$R/ties_only/e3de085e3caeaf23/prepare/merged_model"
+  [dare_ties_ta]="$R/dare_ties_ta/6317f9cbaefe06c2/prepare/merged_model"
 )
-METHODS="ta ties dare-ties"
+METHODS="ta ties_only dare_ties_ta"
 
 echo "== 1/3 檢查驗證報告 =="
 for M in $METHODS; do

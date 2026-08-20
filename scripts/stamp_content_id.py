@@ -118,7 +118,7 @@ def main() -> None:
     artifact = write_dense_delta_artifact(
         destination,
         source=target_weight,
-        condition_id=args.method,          # 統一用 SMoEA 的方法名
+        condition_id=producer_manifest["condition_id"],  # 沿用 producer 的名稱
         run_id=run_id,
         base_model_name=base["name"],
         base_model_revision=base["revision"],

@@ -56,9 +56,19 @@ def read_weight_file(directory: Path, payload: dict) -> dict[str, str]:
         raise MigrationError(f"權重檔不存在：{path}")
     from safetensors import safe_open
 
+    from system.merged_model import _SAFETENSORS_DTYPES
+
     with safe_open(str(path), framework="pt") as handle:
-        return {key: str(handle.get_slice(key).get_dtype()).lower()
-                for key in handle.keys()}
+        names = {}
+        for key in handle.keys():
+            raw = str(handle.get_slice(key).get_dtype())
+            # safetensors 用 BF16 這種寫法，torch 與 manifest 用 bfloat16。
+            # 兩邊混用會讓 validate_inference_config 比對失敗。
+            torch_name = _SAFETENSORS_DTYPES.get(raw)
+            if torch_name is None:
+                raise MigrationError(f"未知的張量 dtype：{raw!r}")
+            names[key] = torch_name
+        return names
 
 
 def infer_block(file_dtypes: dict[str, str]) -> dict:

@@ -27,7 +27,7 @@
 #
 # 【rejection artifact】--artifacts 決定拒絕分支有哪些選項可用：
 #   （不指定）  只有 base。之後仍可隨時單獨跑 merge/fetch 腳本補上
-#   merge      以本機 adapter/ 線上合成 ta、ties、dare-ties
+#   merge      以本機 adapter/ 線上合成 ta、ties_only、dare_ties_ta
 #              （每份約 3.76 GB、需 GPU；已存在者自動跳過）
 #   fetch      自 --hf-repo 指定的 Hugging Face repo 取得現成 artifact
 # 準備好的項目會登記進 <artifact-root>/registry.json，執行期以
@@ -39,7 +39,7 @@ cd "$(dirname "$0")/.."
 ARTIFACT_MODE=""
 ARTIFACT_ROOT="$(pwd)/artifacts"   # 與 configs 的預設一致，開箱即用
 HF_REPO=""
-ARTIFACT_METHODS="ta ties dare-ties"
+ARTIFACT_METHODS="ta ties_only dare_ties_ta"
 while [ $# -gt 0 ]; do
     case "$1" in
         --artifacts)      ARTIFACT_MODE="$2"; shift 2 ;;

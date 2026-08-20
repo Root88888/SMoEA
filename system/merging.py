@@ -5,7 +5,7 @@ system/merging.py — 線上 merge：以 pool150 全池合成一份 exact dense 
 ADR-0002。三種方法的權重運算從 MoEA-Trainer-delivery 搬入：
   ta         src/task_arithmetic/runtime.py::materialize_task_arithmetic
   ties       src/adamerging/exact_ties.py
-  dare-ties  src/dare_ties/runtime.py::materialize_dare_ties
+  dare_ties_ta  src/dare_ties/runtime.py::materialize_dare_ties
              （含 src/dare_ties/pool50.py 的 mask 與 election，改用 pool150 命名）
 
 只搬純權重運算；producer 的 prepare/infer 生命週期、評測與 run binding 留在
@@ -36,10 +36,10 @@ from system.adapter_pool import (
 #: 使用者只選方法，不調參——這讓產物對固定的 pool150 是決定性的。
 SEALED = {
     "ta": {"lambda": 1.0, "reduction": "mean", "tile_rows": 16},
-    "ties": {"lambda": 0.3, "density": 0.2, "reduction": "disjoint_mean",
-             "tile_rows": 4},
-    "dare-ties": {"density": 1.0, "lambda": 0.25, "sign_method": "total",
-                  "rescale": True, "tile_rows": 16, "mask_block_rows": 8},
+    "ties_only": {"lambda": 0.3, "density": 0.2, "reduction": "disjoint_mean",
+                  "tile_rows": 4},
+    "dare_ties_ta": {"density": 1.0, "lambda": 0.25, "sign_method": "total",
+                     "rescale": True, "tile_rows": 16, "mask_block_rows": 8},
 }
 CANONICAL_SEED = 42
 MERGE_METHODS = tuple(SEALED)
@@ -344,7 +344,7 @@ def merge_pool(method, pool, output_path, *, device="cpu", output_dtype=None,
             pool, output_path, coefficient=coefficient,
             device=device, tile_rows=sealed["tile_rows"],
             output_dtype=output_dtype)
-    if method == "ties":
+    if method == "ties_only":
         import torch
         thresholds = compute_global_thresholds(
             pool, sealed["density"], torch.device(device), progress=progress)
