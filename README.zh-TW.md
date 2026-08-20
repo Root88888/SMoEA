@@ -57,6 +57,12 @@ Router Reject之後，會進入設定好的merging conditions(即不同的method
 | `arrow` | 全部 150 個 adapter | 那 150 個 adapter，加一份事先算好的原型索引 |
 | `taskwise_k16_arrow` | 16 個群代表 | 16 個代表 adapter 與索引（約 275 MB） |
 
+**這兩個是為「像訓練任務但沒見過」的請求設計的。** 面對與訓練分布差距很大的自由形式
+提問（寫詩、閒聊之類），逐層獨立的路由可能各層挑到互不相關的 expert，輸出品質會明顯
+下降。這是方法本身的性質，不是設定錯誤。`taskwise_k16_arrow` 只有 16 個候選，通常比
+150 個候選的 `arrow` 穩定。要評估這兩個方法，用貼近任務型態的輸入，或直接跑 15-OOD
+benchmark。
+
 ### 執行期實際能選哪些
 
 引擎能服務四種型態：`base`、`artifact`、`arrow`、`taskwise_k16_arrow`。其中
@@ -455,6 +461,19 @@ python scripts/verify_against_producer.py --method ties_only --adapter-dir adapt
 
 ## 測試
 
+### 快速確認每個方法都能服務
+
+```bash
+python scripts/smoke_rejection_methods.py --set system.dtype=bfloat16
+```
+
+逐一切換清單檔裡的每個 condition，各生成一次，最後給總結表。**完全跳過 Router**，
+因此不受路由資產設定影響；base model 只載一次、方法之間熱切換。
+
+`--only base,ties_only` 只測其中幾個；`--prompt "..."` 換成自己的提示。任何一個方法
+失敗會標示原因但不中斷，其餘照樣測完。
+
+
 四層，由便宜到昂貴。
 
 ```bash
@@ -471,6 +490,27 @@ python scripts/check_env.py               # 套件版本、CUDA、磁碟
 真實硬體上的驗收包含：互動模式跑一次拒絕、benchmark 的 `--smoke`、以及完整 4,159 筆。
 
 ---
+
+## 從哪裡下手
+
+接手這份程式時，依你要改的東西找對應的檔案：
+
+| 想改什麼 | 從哪裡看 |
+|---|---|
+| **拒絕分支的行為** | `system/rejection.py` —— 互動、批次、benchmark 共用的唯一入口，只有一個 `run_rejection()` |
+| **可選哪些方法** | `system/registry.py` —— 清單檔的解析與驗證；`system/inference.py` 的 `select_rejection()` 負責切換 |
+| **權重檔的契約** | `system/merged_model.py` —— writer 與 validator 放在同一個模組，兩者不會各自演進 |
+| **本機建置某個方法** | `system/merging.py`（五種純權重運算）、`system/adamerging.py`（係數最佳化）、`system/lorahub.py`（CMA-ES） |
+| **Arrow 的逐 token 路由** | `system/arrow_runtime.py` —— 資產驗證與 forward hook |
+| **生成行為**（prompt、解碼參數、adapter 解析） | `system/inference.py` |
+| **路由決策** | `router/core.py` —— Router 類別，路由邏輯唯一所在 |
+
+**新增任務**：樣本放 `dataset/train_data/task{N}_train.json`、adapter 放
+`adapter/task{N}/`、重跑 `python scripts/build_router_assets.py --serving-only`。
+送審裁決另需在 `assets/unit_descriptions.json` 補該任務所屬單位的說明。
+
+**改動之後**：跑 `python -m unittest discover -s tests` 與三支 `scripts/selftest_*.py`，
+全部不需要 GPU 也不需要真實資料。
 
 ## 資料格式
 

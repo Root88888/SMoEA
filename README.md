@@ -72,6 +72,14 @@ representative per group. It uses far less memory than `arrow` at a coarser rout
 granularity. The clustering itself is not performed by this system; it consumes the
 prepared assets.
 
+**Both are built for requests that resemble the training tasks without having been
+seen.** On free-form input far from that distribution — writing a poem, casual
+conversation — the per-layer routing can land on unrelated experts layer after layer,
+and output quality drops noticeably. That is a property of the method, not a
+misconfiguration. `taskwise_k16_arrow`, with 16 candidates instead of 150, is usually
+steadier. Evaluate these two with input shaped like the tasks, or through the 15-OOD
+benchmark.
+
 ### Which conditions are selectable at runtime
 
 The engine serves four shapes: `base`, `artifact`, `arrow` and `taskwise_k16_arrow`.
@@ -501,6 +509,20 @@ steps; anything beyond one step is not rounding and should be treated as a defec
 
 ## Testing
 
+### Quickly confirm every method can serve
+
+```bash
+python scripts/smoke_rejection_methods.py --set system.dtype=bfloat16
+```
+
+Activates each condition in the registry in turn, generates once from each, and prints
+a summary. **The Router is skipped entirely**, so this is unaffected by routing-asset
+settings; the base model loads once and conditions hot-swap.
+
+`--only base,ties_only` restricts the set; `--prompt "..."` supplies your own text. A
+method that fails is reported with its reason but does not stop the others.
+
+
 Four layers, cheapest first.
 
 ```bash
@@ -519,6 +541,28 @@ Acceptance on real hardware means: an interactive rejection, `--smoke` on the
 benchmark, and the full 4,159-record run.
 
 ---
+
+## Where to start reading
+
+When picking this codebase up, find the file that owns what you want to change:
+
+| To change | Look at |
+|---|---|
+| **Rejection-branch behaviour** | `system/rejection.py` — the single entry shared by interactive, batch and benchmark; one `run_rejection()` |
+| **Which methods are selectable** | `system/registry.py` parses and validates the declared list; `select_rejection()` in `system/inference.py` performs the switch |
+| **The weight-file contract** | `system/merged_model.py` — writer and validator live in one module so they cannot drift apart |
+| **Building a method locally** | `system/merging.py` (five pure weight operations), `system/adamerging.py` (coefficient optimisation), `system/lorahub.py` (CMA-ES) |
+| **Arrow's per-token routing** | `system/arrow_runtime.py` — asset validation and the forward hook |
+| **Generation behaviour** (prompt, decoding, adapter resolution) | `system/inference.py` |
+| **Routing decisions** | `router/core.py` — the Router class, the only place routing logic lives |
+
+**Adding a task:** put samples in `dataset/train_data/task{N}_train.json`, the adapter
+in `adapter/task{N}/`, and rerun
+`python scripts/build_router_assets.py --serving-only`. Escalation judging also needs
+a description for the task's routing unit in `assets/unit_descriptions.json`.
+
+**After any change:** run `python -m unittest discover -s tests` and the three
+`scripts/selftest_*.py`. None of them need a GPU or real data.
 
 ## Data format
 
