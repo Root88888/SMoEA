@@ -11,6 +11,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import shutil
 from dataclasses import dataclass
 from pathlib import Path
@@ -525,4 +526,117 @@ def write_dense_delta_artifact(
 
     # 寫完立刻以正式驗證器複驗：writer 與 validator 不一致就在這裡爆，
     # 不會等到服務啟動才發現。
+    return load_merged_model_artifact(artifact_dir, expected_base_model=base_model_name)
+
+
+PEFT_ADAPTER_FORMAT = "peft_adapter_v1"
+PEFT_FILENAMES = ("adapter_config.json", "adapter_model.safetensors")
+_LORA_ROLE_RE = re.compile(r"^(?P<module>.+)\.lora_(?P<role>[AB])\.weight$")
+
+
+def _peft_adapter_inventory(path: Path) -> list[dict[str, Any]]:
+    """從 safetensors 標頭讀出 lora_A/lora_B 的成對清單，不載入權重。"""
+    import struct
+
+    with path.open("rb") as handle:
+        header_length = struct.unpack("<Q", handle.read(8))[0]
+        header = json.loads(handle.read(header_length).decode("utf-8"))
+    modules = []
+    for tensor_name, meta in sorted(header.items()):
+        if tensor_name == "__metadata__":
+            continue
+        match = _LORA_ROLE_RE.match(tensor_name)
+        if match is None:
+            raise MergedModelError(
+                f"PEFT adapter 只接受 lora_A/lora_B 張量：{tensor_name!r}")
+        dtype = _SAFETENSORS_DTYPES.get(meta["dtype"])
+        if dtype is None:
+            raise MergedModelError(f"不支援的張量 dtype：{meta['dtype']!r}")
+        modules.append({
+            "name": match.group("module"),
+            "tensor_name": tensor_name,
+            "shape": list(meta["shape"]),
+            "dtype": dtype,
+            "role": f"lora_{match.group('role')}",
+        })
+    if not modules:
+        raise MergedModelError("PEFT adapter 沒有任何 LoRA 張量")
+    roles: dict[str, set[str]] = {}
+    for module in modules:
+        roles.setdefault(module["name"], set()).add(module["role"])
+    unpaired = sorted(name for name, value in roles.items()
+                      if value != {"lora_A", "lora_B"})
+    if unpaired:
+        raise MergedModelError(f"lora_A/lora_B 未成對：{unpaired[:3]}")
+    return modules
+
+
+def write_peft_adapter_artifact(
+    directory: str | Path,
+    *,
+    source: str | Path,
+    condition_id: str,
+    run_id: str,
+    base_model_name: str,
+    base_model_revision: str,
+    base_model_config_sha256: str,
+    torch_dtype: str,
+    quantization: str = "none",
+    producer: dict[str, Any] | None = None,
+    adapter_pool: dict[str, Any] | None = None,
+    merge_report: dict[str, Any] | None = None,
+) -> MergedModelArtifact:
+    """把一個 PEFT adapter 目錄打包成可服務的 artifact，並立刻複驗。
+
+    與 :func:`write_dense_delta_artifact` 是同一套契約的兩種格式；兩者都在寫完
+    result.json 之後立刻以正式驗證器讀回，writer 與 validator 不一致就在這裡爆。
+    """
+    source_dir = Path(source)
+    for filename in PEFT_FILENAMES:
+        if not (source_dir / filename).is_file():
+            raise MergedModelError(f"PEFT adapter 缺少 {filename}：{source_dir}")
+    if len(base_model_config_sha256) != 64:
+        raise MergedModelError("base model config SHA-256 必須是 64 個十六進位字元")
+
+    modules = _peft_adapter_inventory(source_dir / "adapter_model.safetensors")
+    dtypes = {module["dtype"] for module in modules}
+    if dtypes != {torch_dtype}:
+        raise MergedModelError(
+            f"權重檔的 dtype {sorted(dtypes)} 與宣告的 {torch_dtype!r} 不符")
+
+    artifact_dir = Path(directory)
+    artifact_dir.mkdir(parents=True, exist_ok=True)
+    weights = []
+    for filename in PEFT_FILENAMES:
+        target = artifact_dir / filename
+        if (source_dir / filename).resolve() != target.resolve():
+            temporary = target.with_suffix(target.suffix + ".tmp")
+            shutil.copyfile(source_dir / filename, temporary)
+            os.replace(temporary, target)
+        weights.append({"path": filename, "bytes": target.stat().st_size,
+                        "sha256": _sha256(target)})
+
+    payload: dict[str, Any] = {
+        "schema_version": SCHEMA_VERSION,
+        "format": PEFT_ADAPTER_FORMAT,
+        "condition_id": condition_id,
+        "run_id": run_id,
+        "base_model": {"name": base_model_name, "revision": base_model_revision,
+                       "config_sha256": base_model_config_sha256},
+        "inference": {"torch_dtype": torch_dtype, "quantization": quantization},
+        "producer": producer or {"repository": "smoea", "commit": "runtime-merge"},
+        "adapter_pool": adapter_pool or {},
+        "weights": weights,
+        "expected_module_count": len({module["name"] for module in modules}),
+        "expected_tensor_count": len(modules),
+        "modules": modules,
+    }
+    if merge_report is not None:
+        payload["merge"] = merge_report
+
+    manifest_path = artifact_dir / RESULT_FILENAME
+    temporary_manifest = manifest_path.with_suffix(".json.tmp")
+    temporary_manifest.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=1), encoding="utf-8")
+    os.replace(temporary_manifest, manifest_path)
     return load_merged_model_artifact(artifact_dir, expected_base_model=base_model_name)

@@ -1,7 +1,13 @@
 # SMoEA — Scalable Mixture-of-Experts Adapters
 
-A serving system that routes each request to one of 150 task-specific LoRA adapters,
-and falls back to a configurable merging branch when no task is a confident match.
+### Overview
+
+- The Router sends each query to one of 150 task-specific LoRA adapters.
+- When the Router is not confident which task a query belongs to, it rejects, and the
+  query goes to the **merging branch** instead.
+- The merging branch has a static side and a dynamic side. The static side loads
+  prepared weights (artifacts); the dynamic side merges at inference time. Both are
+  described under Merging branch below.
 
 [繁體中文版](README.zh-TW.md)
 
@@ -30,13 +36,9 @@ Router assets are built offline by `scripts/build_router_assets.py` and live in
 
 ### Merging branch
 
-Everything past a Reject. All conditions share the same **base model**
-(`unsloth/Meta-Llama-3.1-8B`); they differ only in what is layered on top of it.
-Layering never mutates the base model, so switching between conditions does not
-reload it.
-
-> **`base` vs base model.** The base model is Llama-3.1-8B, shared by every
-> condition. `base` is the name of one condition, meaning "layer nothing on top".
+After a Reject the query goes to the configured merging condition (that is, one of
+the methods below). Every condition shares the same **base model**
+(`unsloth/Meta-Llama-3.1-8B`).
 
 #### Conditions
 
@@ -50,10 +52,11 @@ reload it.
 | `ties_only` | Trims each adapter to its largest-magnitude coordinates, elects a sign per coordinate, and keeps only the contributions that agree. `only` means TIES with no optimisation stage on top — as opposed to `adamerging_pp`. | yes | yes |
 | `dare_ties_ta` | Random drop, rescale, sign election, then Task Arithmetic. The sealed drop rate is 0, so the random stage is effectively disabled. | yes | yes |
 | `lora_lego` | LoRA-Lego merging. Clusters rank-wise units across the pool. | yes | yes |
-| `adamerging_pp` | TIES as a pre-step, then optimisation of the merge coefficients. Needs the model loaded and training data, so it is not a pure weight operation. | yes | not yet |
-| `lorahub` | LoRAHub. **Benchmark subject only** — its coefficients are fitted against a specific dataset and seed, so there is no single set of weights valid for arbitrary online requests. | **no** | not yet |
+| `adamerging_pp` | TIES as a pre-step, then optimisation of the merge coefficients. Learns one coefficient per layer per task, which needs the model loaded and iterations over calibration data — not a pure weight operation. | yes | yes (GPU and `dataset/train_data/`) |
+| `lorahub` | LoRAHub. Picks 20 of the 150 adapters and searches their weights with CMA-ES so their weighted sum scores lowest on a few demonstration examples. **Benchmark subject only** — the coefficients are fitted to those specific examples, so no single set of weights is valid for arbitrary online requests. | **no** | yes (GPU and examples) |
 
-Each baseline except `base` needs one weight file of roughly 3.76 GB.
+Each baseline except `base` needs one weight file. The first six are dense deltas of
+roughly 3.76 GB; `lorahub` produces a LoRA at the source rank, which is far smaller.
 
 **Arrow routing** — weights are not merged ahead of time. During generation, each
 token is matched against per-expert prototypes and only the closest expert is applied,
@@ -319,7 +322,10 @@ python scripts/merge_pool150.py --method ties_only --adapter-dir adapter
 
 | Flag | Meaning |
 |---|---|
-| `--method {ta,ties_only,dare_ties_ta,pico_ta,lora_lego}` | Which condition to build |
+| `--method {ta,ties_only,dare_ties_ta,pico_ta,lora_lego,adamerging_pp,lorahub}` | Which condition to build |
+| `--train-root <path>` | Calibration data for `adamerging_pp` (default `dataset/train_data`) |
+| `--examples <file>` | Demonstration examples for `lorahub`; required for it |
+| `--run-seed N` | Run seed for `lorahub` (sealed values are 1, 2, 3) |
 | `--adapter-dir adapter` | Derive the ordered manifest from `adapter/task{N}/` |
 | `--manifest <file>` | Use an explicit ordered manifest instead |
 | `--device cpu` | Compute on CPU (default `cuda`) |
@@ -334,8 +340,25 @@ needs about 7.5 GB of GPU memory, so a card of at least 12 GB if you are not usi
 requests.
 
 Rebuilding is skipped when the same adapter pool has already produced an artifact.
-`adamerging_pp` and `lorahub` are not built here yet: both need the model loaded and
-data to optimise against, which is a different kind of work from a weight operation.
+**The seven methods split into two kinds.** The first five (`ta`, `ties_only`,
+`dare_ties_ta`, `pico_ta`, `lora_lego`) are pure weight operations: they consume the
+adapters and nothing else, and run on CPU. The last two optimise against data and
+need a GPU:
+
+```bash
+# adamerging_pp: 500 iterations over dataset/train_data to learn per-layer
+# coefficients, then the TIES materialisation path
+python scripts/merge_pool150.py --method adamerging_pp --adapter-dir adapter
+
+# lorahub: CMA-ES over the given examples (40 generations x 12 population)
+python scripts/merge_pool150.py --method lorahub --adapter-dir adapter \
+  --examples <examples.json> --run-seed 1
+```
+
+`lorahub` examples are `[{"instance_id", "prompt", "output"}, ...]`; the sealed
+setting uses five. **The manifest records a fingerprint of those examples**, because
+the weights are only meaningful for them: a different set means a different
+fingerprint and a different `run_id`.
 
 ---
 

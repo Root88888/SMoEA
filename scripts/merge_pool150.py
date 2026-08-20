@@ -94,10 +94,15 @@ def register(registry_path, entry_id, artifact_dir, description,
 def main() -> None:
     parser = add_config_args(argparse.ArgumentParser())
     parser.add_argument("--method", required=True,
-                        choices=list(MERGE_METHODS) + ["adamerging_pp"])
+                        choices=list(MERGE_METHODS) + ["adamerging_pp", "lorahub"])
     parser.add_argument("--train-root", default=None,
                         help="adamerging_pp 的校準資料來源；預設 "
                              "<dataset_dir>/train_data")
+    parser.add_argument("--examples", default=None,
+                        help="lorahub 的示範樣本 JSON："
+                             "[{\"instance_id\",\"prompt\",\"output\"}, ...]")
+    parser.add_argument("--run-seed", type=int, default=1,
+                        help="lorahub 的 run seed（封板為 1、2、3）")
     parser.add_argument("--manifest", default=None,
                         help="pool150 的有序 adapter manifest")
     parser.add_argument("--adapter-dir", default=None,
@@ -171,6 +176,45 @@ def main() -> None:
     os.makedirs(staging, exist_ok=True)
     staged_delta = os.path.join(staging, "dense_delta.safetensors")
     started = time.time()
+    if args.method == "lorahub":
+        # LoRAHub 的產物是 PEFT adapter，而且綁定一組示範樣本——與其他方法分流。
+        from system.lorahub import adapt
+        from system.merged_model import write_peft_adapter_artifact
+        if not args.examples:
+            parser.error("lorahub 需要 --examples 指定示範樣本")
+        examples = json.loads(open(args.examples, encoding="utf-8").read())
+        adapter_dir = os.path.join(staging, "adapter")
+        lorahub_report = adapt(
+            pool, examples, adapter_dir, base_model=cfg["system"]["base_model"],
+            run_seed=args.run_seed, device=args.device)
+        # 編號取權重檔雜湊，與其他方法一致。
+        import hashlib
+        digest = hashlib.sha256()
+        with open(os.path.join(adapter_dir, "adapter_model.safetensors"), "rb") as handle:
+            for block in iter(lambda: handle.read(1 << 20), b""):
+                digest.update(block)
+        run_id = digest.hexdigest()[:16]
+        artifact_dir = os.path.join(args.artifact_root, args.method, run_id,
+                                    "prepare", "merged_model")
+        base = resolve_base_model_identity(cfg["system"]["base_model"])
+        artifact = write_peft_adapter_artifact(
+            artifact_dir, source=adapter_dir, condition_id="lorahub",
+            run_id=run_id, base_model_name=base["name"],
+            base_model_revision=base["revision"],
+            base_model_config_sha256=base["config_sha256"],
+            torch_dtype=dtype, adapter_pool=fingerprint,
+            merge_report=lorahub_report)
+        print(f"[merge] artifact 已驗證：{artifact.condition_id}:{artifact.run_id} "
+              f"（PEFT，示範樣本指紋 {lorahub_report['fewshot_sha256'][:16]}）")
+        import shutil
+        shutil.rmtree(staging, ignore_errors=True)
+        if args.registry:
+            entry = register(args.registry, args.register_as or args.method,
+                             artifact_dir,
+                             f"LoRAHub，擬合於 {lorahub_report['fewshot_sha256'][:12]}")
+            print(f"[merge] 已登記進 {args.registry} → id={entry['id']}")
+        return
+
     if args.method == "adamerging_pp":
         # 兩階段：先學逐層係數（需要 GPU 與校準資料），再走 TIES 合成。
         from system.adamerging import SEALED_ADAMERGING, optimize_coefficients
