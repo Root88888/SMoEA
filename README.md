@@ -379,6 +379,5 @@ python scripts/eval_outputs_llm_judge.py --batch results/main_batch_outputs_{時
   `assets/unit_descriptions.json` 補該任務所屬單位的說明）。
 - **改動之後**：跑 `python -m unittest discover -s tests` 與三支
   `scripts/selftest_*.py`，全部不需要 GPU 也不需要真實資料。
-- **設計背景**：`CONTEXT.md` 是共用詞彙與不變式，`docs/adr/` 記錄兩個主要決策
-  及其取捨。
+- **設計背景**：`CONTEXT.md` 是共用詞彙與不變式，`docs/adr/` 記錄兩個主要決策及其取捨。
   
