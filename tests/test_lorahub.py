@@ -185,6 +185,51 @@ class PeftArtifactTests(unittest.TestCase):
         self.assertEqual(len(reloaded.modules), 4)
         self.assertEqual(artifact.manifest["expected_module_count"], 2)
 
+    def test_float32_lora_factors_may_serve_a_bfloat16_base_model(self):
+        """inference.torch_dtype 是服務精度，modules[].dtype 是張量精度——不同的東西。
+
+        LoRA 因子通常是 fp32，而 base model 以 bf16 服務。強制兩者相等會讓所有
+        真實的 PEFT 產物都打不包。
+        """
+        from system.merged_model import (
+            load_merged_model_artifact,
+            write_peft_adapter_artifact,
+        )
+
+        source = self.root / "fp32"
+        source.mkdir()
+        stem = "base_model.model.model.layers.0.mlp.down_proj"
+        save_file({f"{stem}.lora_A.weight": torch.randn(2, 6),      # float32
+                   f"{stem}.lora_B.weight": torch.randn(8, 2)},
+                  str(source / "adapter_model.safetensors"))
+        (source / "adapter_config.json").write_text("{}", encoding="utf-8")
+
+        write_peft_adapter_artifact(
+            self.root / "mixed", source=source, condition_id="lorahub",
+            run_id="r", base_model_name="base", base_model_revision="local",
+            base_model_config_sha256="a" * 64, torch_dtype="bfloat16")
+
+        artifact = load_merged_model_artifact(self.root / "mixed")
+        self.assertEqual(artifact.torch_dtype, "bfloat16", "服務精度")
+        self.assertEqual(artifact.modules[0].dtype, "float32", "張量精度")
+
+    def test_lora_tensors_of_mixed_dtypes_are_refused(self):
+        from system.merged_model import write_peft_adapter_artifact
+
+        source = self.root / "mixed_src"
+        source.mkdir()
+        stem = "base_model.model.model.layers.0.mlp.down_proj"
+        save_file({f"{stem}.lora_A.weight": torch.randn(2, 6),
+                   f"{stem}.lora_B.weight": torch.randn(8, 2, dtype=torch.bfloat16)},
+                  str(source / "adapter_model.safetensors"))
+        (source / "adapter_config.json").write_text("{}", encoding="utf-8")
+
+        with self.assertRaisesRegex(Exception, "不一致"):
+            write_peft_adapter_artifact(
+                self.root / "bad", source=source, condition_id="lorahub",
+                run_id="r", base_model_name="base", base_model_revision="local",
+                base_model_config_sha256="a" * 64, torch_dtype="bfloat16")
+
     def test_an_unpaired_lora_tensor_is_refused(self):
         from system.merged_model import write_peft_adapter_artifact
 

@@ -599,10 +599,15 @@ def write_peft_adapter_artifact(
         raise MergedModelError("base model config SHA-256 必須是 64 個十六進位字元")
 
     modules = _peft_adapter_inventory(source_dir / "adapter_model.safetensors")
-    dtypes = {module["dtype"] for module in modules}
-    if dtypes != {torch_dtype}:
-        raise MergedModelError(
-            f"權重檔的 dtype {sorted(dtypes)} 與宣告的 {torch_dtype!r} 不符")
+    # 注意這裡**不要求**張量 dtype 等於 torch_dtype。兩者是不同的東西：
+    #   inference.torch_dtype = 服務時 base model 的精度（例如 bfloat16）
+    #   modules[].dtype       = 檔案裡 LoRA 因子的精度（通常是 float32）
+    # LoRA 是乘進去、不是直接加進 activation，兩者本來就可以不同——既有的
+    # peft_adapter_v1 產物正是 fp32 因子配 bf16 服務。dense delta 則不同：
+    # 它直接加進 forward，精度必須一致，所以那邊有這個檢查。
+    dtypes = sorted({module["dtype"] for module in modules})
+    if len(dtypes) != 1:
+        raise MergedModelError(f"LoRA 張量的 dtype 不一致：{dtypes}")
 
     artifact_dir = Path(directory)
     artifact_dir.mkdir(parents=True, exist_ok=True)
