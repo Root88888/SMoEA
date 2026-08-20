@@ -37,7 +37,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 ARTIFACT_MODE=""
-ARTIFACT_ROOT="$(pwd)/../smoea-artifacts"
+ARTIFACT_ROOT="$(pwd)/artifacts"   # 與 configs 的預設一致，開箱即用
 HF_REPO=""
 ARTIFACT_METHODS="ta ties dare-ties"
 while [ $# -gt 0 ]; do

@@ -16,30 +16,49 @@
 一般路由、送第二個模型複判、直接拒絕。前三種有機會命中某個任務，最後一種一定
 進拒絕分支。複判沒通過的也會進拒絕分支。
 
-拒絕分支要用哪一組權重，由你指定。以下是目前可選的五種。
+拒絕分支要用哪一組權重，由你指定。可選的方法分成兩類：baselines 與 arrow routing。
 
 ### 拒絕之後可以用哪些方法
 
-五種方法共用同一個底層大模型（Llama-3.1-8B），差別只在額外疊上去的東西。疊加
-不會改動底層模型本身，所以互相切換不需要重新載入模型。
+先分清楚兩個詞：
+
+- **底層模型**（base model）＝ Llama-3.1-8B。**所有方法都共用這一個**，沒有例外。
+- **`base`** 是其中一種方法的名字，意思是「不在底層模型上疊任何東西」。
+
+各方法的差別只在往底層模型上疊什麼。疊加不會改動底層模型本身，所以互相切換不需要
+重新載入模型。方法分成兩類：
+
+#### 一、Baselines
+
+權重在開始回答之前就固定了。同樣的輸入會得到同樣的輸出。
 
 | 名稱 | 疊了什麼 | 實際做的事 |
 |---|---|---|
-| `base` | 不疊任何東西 | 直接用原始大模型回答。不需要額外檔案，是預設值。 |
+| `base` | 不疊任何東西 | 直接用底層模型回答。不需要額外檔案，是預設值。 |
 | `ta` | 一組固定權重 | 把 150 個任務 adapter 直接平均成一組權重。所有任務的調整混在一起，不做取捨。 |
 | `ties` | 一組固定權重 | 也是把 150 個混起來，但先丟掉每個 adapter 裡數值偏小的部分（只留最大的兩成），再讓剩下的部分投票決定每個位置該往哪個方向調整，方向和多數不一致的就不採用，最後整體縮到約三成。目的是減少不同任務互相拉扯。 |
 | `dare-ties` | 一組固定權重 | 流程是「隨機丟掉一部分數值 → 把剩下的放大補回總量 → 投票」。交付設定的丟棄比例是 0，也就是隨機丟棄實際上關閉了，所以真正在做的是「全部保留 → 投票 → 整體縮小到四分之一」。它沒有 `ties` 那個「只留最大兩成」的步驟。 |
-| `arrow` | 150 組權重加一份索引 | 不預先混合。回答時逐個 token（大致是一個字或詞的片段）判斷「這一段最接近哪個任務」，當場只套用那一個 adapter。同一句話裡不同位置可能用到不同 adapter，每一層也各自判斷。 |
 
-前四種在開始回答之前權重就固定了，同樣的輸入會得到同樣的輸出。`arrow` 的權重
-組合是回答過程中決定的，所以不同請求走的路徑不一樣。
+`ta`、`ties`、`dare-ties` 各需要一個約 3.76 GB 的權重檔（見〈準備拒絕分支要用的檔案〉）。
+`base` 不需要任何額外檔案。
 
-需要準備什麼：
+#### 二、Arrow routing（兩種變體）
 
-- `base` 不需要任何額外檔案。
-- `ta`、`ties`、`dare-ties` 各需要一個約 3.76 GB 的權重檔，可以下載現成的，也可以
-  用手上的 150 個 adapter 自己算（見〈準備拒絕分支要用的檔案〉）。
-- `arrow` 需要那 150 個 adapter 本身，加上一份事先算好的索引檔。
+不預先混合權重。回答時逐個 token（大致是一個字或詞的片段）判斷「這一段最接近哪個
+任務」，當場只套用那一個 adapter。同一句話裡不同位置可能用到不同 adapter，32 層也
+各自判斷。**每個請求走的路徑都不一樣。**
+
+兩種變體的差別只在候選有幾個：
+
+| 名稱 | 候選數 | 需要的檔案 |
+|---|---|---|
+| `arrow` | 150 個 adapter 全部 | 那 150 個 adapter 本身，加一份事先算好的索引檔 |
+| `taskwise_k16_arrow` | 16 個代表 | 16 個代表 adapter 與索引檔（約 275 MB） |
+
+`taskwise_k16_arrow` 是先把 150 個 adapter 分成 16 群、每群選一個代表，記憶體佔用小很多，
+代價是判斷的粒度較粗。哪 16 個當代表是離線分群決定的，本系統不做分群，只讀現成的。
+
+---
 
 不指定的話就是 `base`。系統不會自己去找或下載任何東西——沒準備就是沒有，
 不會靜悄悄改用別的。
@@ -198,17 +217,15 @@ docs/                       架構圖與文件
 ## 準備拒絕分支要用的檔案
 
 `ta`、`ties`、`dare-ties` 這三個方法各需要一個約 3.76 GB 的權重檔。**取得方式有兩種，
-選一種就好，結果完全一樣**（同一份權重，或差異在儲存格式的最小間隔之內）：
+選一種就好，結果完全一樣**：
 
-| | 需要什麼 | 花多久 |
-|---|---|---|
-| **方式一：下載** | 網路、Hugging Face 帳號與存取權 | 看網路速度，約 11 GB |
-| **方式二：自己算** | 本機那 150 個 adapter（約 2.8 GB） | GPU 約 1 小時／CPU 約 3 小時（三個方法合計） |
+- **方式一：下載** —— 需要網路與 Hugging Face 存取權。
+- **方式二：自己算** —— 用本機那 150 個 adapter，不需要網路。GPU 或 CPU 都可以。
 
 `base` 兩種都不需要，直接可用。`arrow` 與 `taskwise_k16_arrow` 不走這裡——它們用的是
-另一套檔案，見〈其他兩種動態方法〉。
+另一套檔案，見〈Arrow routing 的兩種變體〉。
 
-一鍵處理（兩種方式都可以在建置時一起做完）：
+一鍵處理（建置時一起做完，權重檔會放進 repo 底下的 `artifacts/`）：
 
 ```bash
 bash scripts/setup_workspace.sh --artifacts fetch --hf-repo <org>/<repo>   # 方式一
@@ -252,21 +269,10 @@ python scripts/merge_pool150.py --method ties --adapter-dir adapter \
 `--method` 三選一：`ta`、`ties`、`dare-ties`。三個都要就跑三次。
 
 **選 CPU 還是 GPU**：預設走 GPU（`--device cuda`）。沒有顯卡就加 `--device cpu`，
-結果一樣，只是慢很多。`ties` 另外需要約 7.5 GB 顯示記憶體，顯卡至少要 12 GB。
+結果一樣。`ties` 需要約 7.5 GB 顯示記憶體，用 GPU 的話顯卡至少要 12 GB。
 
-實測時間（RTX4000SFF Ada 20GB／CPU 8 執行緒）：
-
-| 方法 | GPU | CPU |
-|---|---|---|
-| `ta` | 約 1 分鐘 | 約 5 分鐘 |
-| `dare-ties` | 約 3 分鐘 | 約 40 分鐘 |
-| `ties` | 約 36 分鐘 | 約 2.4 小時 |
-
-`ties` 特別慢是因為它要幫每一個任務算一個門檻（「數值前 20% 大的分界線在哪」），
-而要知道這條線就得把該任務的 18.8 億個數值排過一遍，150 個任務就排 150 次。排序吃的是
-記憶體頻寬不是算力，所以 GPU 相對 CPU 只快約兩倍。
-
-這是產生權重檔的一次性成本。之後回答請求時不會再做這件事。
+三個方法裡 `ties` 明顯最花時間（它要幫 150 個任務各算一次門檻），跑之前先預留時間。
+這是產生權重檔的一次性成本，之後回答請求時不會再做。
 
 已經算過的不會重算：程式會比對 adapter 的內容，同一批 adapter 算過就直接沿用。
 
@@ -277,12 +283,11 @@ python scripts/merge_pool150.py --method ties --adapter-dir adapter \
 
 ### 準備好之後：怎麼選用
 
-把設定指向產出的清單檔：
+**不用設定路徑。** 上面兩種方式都會把權重檔放在 repo 底下的 `artifacts/`，清單檔就是
+`artifacts/registry.json`，這也是 `configs/default.yaml` 的預設值。準備好之後直接跑：
 
 ```bash
-python main.py --mode interactive \
-  --set system.artifact_registry=<本機路徑>/registry.json \
-  --set system.dtype=bfloat16
+python main.py --mode interactive --set system.dtype=bfloat16
 ```
 
 互動模式中：
@@ -290,24 +295,41 @@ python main.py --mode interactive \
 ```text
 :rejection              顯示目前使用哪一個
 :rejection list         列出可選的項目（* 標示目前生效者）
-:rejection use ties     切換；底層大模型不重載，幾秒完成
+:rejection use ties     切換；底層模型不重載，幾秒完成
 ```
 
 批次模式整批共用同一個：
 
 ```bash
-python main.py --mode batch --artifact ties \
-  --set system.artifact_registry=<本機路徑>/registry.json
+python main.py --mode batch --artifact ties
+```
+
+benchmark 也是同一個寫法：
+
+```bash
+python scripts/run_rejection_benchmark.py --artifact ties \
+  --benchmark-root <benchmark 資料目錄> --output-dir results/rejection-ties
+```
+
+權重檔放在別的地方（例如共用儲存）時，才需要覆蓋預設：
+
+```bash
+python main.py --mode interactive \
+  --set system.artifact_registry=/shared/artifacts/registry.json
 ```
 
 只有列在清單檔裡的項目可以選——系統不掃描目錄，也不會自動挑最新的一份。切換前會完整
 檢查要換過去的那一份（格式、底層模型是否相符、檔案大小與雜湊值）；檢查沒過就維持原本
 生效的那一個，不會退回 `base`。
 
+清單檔還沒建立時不會出錯，只是沒有可選項目，程式會印一行提示，拒絕分支就用
+`configs/default.yaml` 的 `system.rejection_method`（預設 `base`）。
+
 清單檔的格式見
 [`examples/artifact_registry.example.json`](examples/artifact_registry.example.json)。
+`artifacts/` 已列入 `.gitignore`，權重檔不會進版控。
 
-### 其他兩種動態方法
+### Arrow routing 的兩種變體
 
 `arrow` 與 `taskwise_k16_arrow` 不需要上面那個 3.76 GB 的權重檔，但各自需要別的東西：
 

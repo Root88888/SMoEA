@@ -123,7 +123,14 @@ class InferenceEngine:
         self._dense_controller = None
         self._arrow_controller = None
         self._attached = False
+        # 清單檔預設指向 repo 下的 artifacts/，還沒準備權重檔時它不存在——那只是
+        # 「沒有可選項目」，不是錯誤。檔案存在但內容有問題才報錯。
         registry_path = self.cfg.get("artifact_registry")
+        if registry_path and not os.path.isfile(registry_path):
+            print(f"[system] 找不到拒絕方法清單 {registry_path}；"
+                  f"目前只有設定檔指定的 {self.cfg.get('rejection_method') or 'base'}",
+                  flush=True)
+            registry_path = None
         self._registry = (
             load_registry(registry_path) if registry_path else None)
         self._selection = self._validated_selection(
