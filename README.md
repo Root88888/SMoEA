@@ -297,8 +297,7 @@ python scripts/merge_pool150.py --method lorahub \
 adapter 從設定檔的 `system.adapter_dir` 取（與 Router 用的是同一個值），不必另外
 指定；adapter 放在別處時才用 `--adapter-dir` 或 `--manifest` 覆蓋。
 
-超參數是固定的，使用者選方法不調參。同一批 adapter 建置過就不會重算。權重檔的編號
-取檔案本身雜湊的前 16 碼，**編號相同就保證內容相同**。
+超參數是固定的，使用者選方法不調參。同一批 adapter 建置過就不會重算。權重檔的編號取檔案本身雜湊的前 16 碼，**編號相同就保證內容相同**。
 
 舊版工具產生的權重檔若缺欄位，先跑一次補寫（只改說明檔、不動權重）：
 
