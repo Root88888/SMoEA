@@ -94,15 +94,20 @@ def main() -> None:
     parser.add_argument("--method", required=True, choices=list(MERGE_METHODS))
     parser.add_argument("--producer", required=True,
                         help="producer 的 merged_model 目錄")
-    parser.add_argument("--adapter-dir", default=None)
+    parser.add_argument("--adapter-dir", default=None,
+                        help="預設取設定檔的 system.adapter_dir")
     parser.add_argument("--manifest", default=None)
     parser.add_argument("--work-dir", required=True)
     parser.add_argument("--device", default="cuda")
     parser.add_argument("--expected-adapters", type=int, default=150)
     args = parser.parse_args()
     cfg = load_config(args.config, args.set)
-    if bool(args.manifest) == bool(args.adapter_dir):
-        parser.error("請擇一提供 --manifest 或 --adapter-dir")
+    if args.manifest and args.adapter_dir:
+        parser.error("--manifest 與 --adapter-dir 只能擇一")
+    if not args.manifest and not args.adapter_dir:
+        # 設定檔已經定義了 adapter 的位置（InferenceEngine 也用同一個值），
+        # 不該再要求使用者指定一次。
+        args.adapter_dir = cfg["system"]["adapter_dir"]
 
     import torch
 
