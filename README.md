@@ -117,7 +117,7 @@ docs/                       架構圖與文件
  
 5. 批次執行
 ```bash
-   python main.py --mode batch          # --tasks a,b 只跑任務a,b、--limit n 每個任務test set只取前n筆，這些沒加就是全跑
+   python main.py --mode batch                        # --tasks a,b 只跑任務a,b、--limit n 每個任務test set只取前n筆，這些沒加就是全跑
    python main.py --mode batch --artifact ties_only   # 整批的拒絕樣本共用指定的方法
 ```
  
