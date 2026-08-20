@@ -136,6 +136,24 @@ def _resolve(root: Path, value: Any, label: str, entry_id: str) -> Path:
     return (root / candidate).resolve()
 
 
+def path_for_registry(registry_path: str | Path, target: str | Path) -> str:
+    """把要登記的路徑轉成 load_registry 解得開的形式。
+
+    寫入端（merge_pool150.py、fetch_artifact.py）手上的通常是「相對於 cwd」
+    的路徑——例如 configs 的 `artifact_root: artifacts` 就是相對的，於是登記
+    成 `artifacts/<method>/<run>/…`。但本檔的契約是相對路徑以 **registry 檔
+    所在目錄** 為基準，那份登記再解析一次就疊成 `artifacts/artifacts/…`，
+    選用時找不到檔案。收斂在寫入端做：落在 registry 目錄底下的存相對路徑
+    （registry 與 artifact 一起搬走仍然解得開），在外面的存絕對路徑。
+    """
+    root = Path(registry_path).resolve().parent
+    resolved = Path(target).resolve()
+    try:
+        return str(resolved.relative_to(root))
+    except ValueError:
+        return str(resolved)
+
+
 def _entry_from(payload: Any, root: Path, seen: set[str]) -> RegistryEntry:
     if not isinstance(payload, dict):
         raise RegistryError("registry 的每個項目都必須是 JSON 物件")

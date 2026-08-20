@@ -29,7 +29,7 @@ from system.merged_model import (  # noqa: E402
     MergedModelError,
     load_merged_model_artifact,
 )
-from system.registry import load_registry  # noqa: E402
+from system.registry import load_registry, path_for_registry  # noqa: E402
 
 ARTIFACT_FILES = ("result.json", "dense_delta.safetensors")
 
@@ -94,7 +94,8 @@ def register(registry_path, entry_id, artifact_dir, description):
     else:
         payload = {"schema_version": 1, "entries": []}
     entry = {"id": entry_id, "method": "artifact", "source": "prepared",
-             "artifact_dir": str(artifact_dir), "description": description}
+             "artifact_dir": path_for_registry(registry_path, artifact_dir),
+             "description": description}
     payload["entries"] = [
         item for item in payload["entries"] if item.get("id") != entry_id
     ] + [entry]

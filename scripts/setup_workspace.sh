@@ -25,10 +25,11 @@
 # 以及（選用）rejection artifact 的準備。
 # base model 與裁決模型（各 ~16GB）會在首次執行 main.py 時自動下載。
 #
-# 【adapter pool】adapter/ 不足 150 個時自 --adapter-repo 取得（約 2.7 GB；
-# 預設 Tincan0325/smoea-adapter-pool150）。逐檔核對 sha256，已在本機且相符
-# 者跳過，所以中斷後重跑只補缺的部分。自備 adapter 者加 --no-adapter-fetch，
-# 把 adapter/task{N}/ 放好即可（內含 adapter 檔或 checkpoint-*/）。
+# 【adapter pool】每次執行都與 --adapter-repo 逐檔核對 sha256（預設
+# Tincan0325/smoea-adapter-pool150；首次約 2.7 GB），相符者不重下，所以
+# 中斷後重跑只補缺的部分。要用自己訓練的 adapter 就加 --no-adapter-fetch，
+# 把 adapter/task{N}/ 放好即可（內含 adapter 檔或 checkpoint-*/）——該旗標
+# 的意思是「這個池不是來自那個 repo，不要動它」。
 #
 # 【rejection artifact】--artifacts 決定拒絕分支有哪些選項可用：
 #   （不指定）  只有 base。之後仍可隨時單獨跑 merge/fetch 腳本補上
@@ -128,15 +129,14 @@ conda env config vars set PYTHONNOUSERSITE=1 >/dev/null 2>&1 || true
 echo "[2/6] 環境體檢"
 python scripts/check_env.py || fail "體檢未過" "照上方 FAIL 提示處置後重跑本腳本"
 
-# ---- 3/6 adapter pool（不足 150 個就補齊；逐檔核對 sha256）----
+# ---- 3/6 adapter pool（與遠端逐檔核對 sha256，缺漏或不符者才下載）----
+# 刻意不用「目錄數 >= 150 就跳過」來判斷：目錄存在不代表裡面的檔案是完整的
+# （中斷的下載會留下空目錄），而核對本身只是重算一次雜湊，相符者不重下。
 N_ADAPTER="$(ls -d adapter/task* 2>/dev/null | wc -l)"
 if [ "$ADAPTER_FETCH" -eq 0 ]; then
-    echo "[3/6] --no-adapter-fetch：沿用本機的 $N_ADAPTER 個 adapter"
-elif [ "$N_ADAPTER" -ge 150 ]; then
-    echo "[3/6] adapter 已有 $N_ADAPTER 個，跳過下載"
-    echo "      要重新核對：python scripts/fetch_adapter_pool.py --repo $ADAPTER_REPO"
+    echo "[3/6] --no-adapter-fetch：沿用本機的 $N_ADAPTER 個 adapter，不與遠端核對"
 else
-    echo "[3/6] 取得 adapter pool（$ADAPTER_REPO，約 2.7 GB）…"
+    echo "[3/6] 核對 adapter pool（$ADAPTER_REPO；首次約 2.7 GB）…"
     python scripts/fetch_adapter_pool.py --repo "$ADAPTER_REPO" \
       || fail "取得 adapter pool 失敗" \
               "確認網路與 repo；私有 repo 需先 hf auth login。已下載的部分會保留，重跑只補缺的"

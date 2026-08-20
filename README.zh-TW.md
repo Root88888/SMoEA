@@ -91,20 +91,20 @@ docs/                       架構圖與文件
    bash scripts/setup_workspace.sh                                          # 只有 base
    bash scripts/setup_workspace.sh --artifacts fetch --hf-repo <org>/<repo> # 另外下載權重檔
    bash scripts/setup_workspace.sh --artifacts merge                        # 另外本機建置
-   bash scripts/setup_workspace.sh --no-adapter-fetch                       # adapter 已自備
+   bash scripts/setup_workspace.sh --no-adapter-fetch                       # 用自己的 adapter
 ```
 
    `--artifacts` 決定拒絕分支有哪些方法可用，不加就只有 base；詳見〈拒絕分支〉。
 
    自動完成：檔案檢查（缺漏會明確提示）、conda 環境建置與依賴安裝
-   （首次 10-20 分鐘）、環境體檢、**adapter 池下載**（約 2.7 GB；
-   `adapter/` 已有 150 個就跳過）、查詢嵌入計算與路由資產建置
-   （首次 GPU 數分鐘）。結尾印出「全部就緒」即完成；中途停止時
-   依提示處理後重跑即可（已完成步驟自動跳過）。
+   （首次 10-20 分鐘）、環境體檢、**adapter 池核對**（首次約 2.7 GB）、
+   查詢嵌入計算與路由資產建置（首次 GPU 數分鐘）。結尾印出「全部就緒」
+   即完成；中途停止時依提示處理後重跑即可（已完成步驟自動跳過）。
 
    adapter 池預設取自 `Tincan0325/smoea-adapter-pool150`，`--adapter-repo`
-   可換來源。每個檔案都與池清單記錄的 sha256 核對，已在本機且相符者跳過，
-   所以中斷後重跑只補缺的部分。要單獨執行這一步：
+   可換來源。每次執行都逐檔與池清單記錄的 sha256 核對，只下載缺漏或不符的，
+   所以中斷後重跑就能修好。`--no-adapter-fetch` 的意思是「這個池不是來自那個
+   repo，不要動它」——用自己訓練的 adapter 時才加。要單獨執行這一步：
 
 ```bash
    python scripts/fetch_adapter_pool.py --repo Tincan0325/smoea-adapter-pool150 --list

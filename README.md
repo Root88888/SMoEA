@@ -104,7 +104,7 @@ the OOD task149 file to `task9149_test.json` manually.
    bash scripts/setup_workspace.sh                                          # base only
    bash scripts/setup_workspace.sh --artifacts fetch --hf-repo <org>/<repo> # also download artifacts
    bash scripts/setup_workspace.sh --artifacts merge                        # also build locally
-   bash scripts/setup_workspace.sh --no-adapter-fetch                       # bring your own adapters
+   bash scripts/setup_workspace.sh --no-adapter-fetch                       # adapters not from that repo
 ```
 
    `--artifacts` decides which rejection methods become available; without it
@@ -112,17 +112,18 @@ the OOD task149 file to `task9149_test.json` manually.
 
    The script automatically performs: file checks (missing items are reported
    explicitly), conda environment creation and dependency install (10–20 min
-   the first time), environment checkup, **adapter-pool download** (~2.7 GB,
-   skipped when `adapter/` already holds 150 tasks), query-embedding
-   computation and routing-asset build (a few GPU minutes the first time).
-   It ends with an "all ready" message; if it stops midway, follow the hint
-   and rerun — completed steps are skipped automatically.
+   the first time), environment checkup, **adapter-pool verification**
+   (~2.7 GB on the first run), query-embedding computation and routing-asset
+   build (a few GPU minutes the first time). It ends with an "all ready"
+   message; if it stops midway, follow the hint and rerun — completed steps
+   are skipped automatically.
 
    The pool comes from `Tincan0325/smoea-adapter-pool150`; `--adapter-repo`
-   points elsewhere. Every file is checked against the sha256 recorded in the
-   pool manifest, and files already present and matching are skipped, so an
-   interrupted download only refetches what is missing. To run that step on
-   its own:
+   points elsewhere. Every run checks each file against the sha256 recorded
+   in the pool manifest and downloads only what is missing or mismatched, so
+   an interrupted download is repaired by rerunning. `--no-adapter-fetch`
+   means "this pool is not from that repo, leave it alone" — use it when you
+   supply adapters of your own. To run the step on its own:
 
 ```bash
    python scripts/fetch_adapter_pool.py --repo Tincan0325/smoea-adapter-pool150 --list
