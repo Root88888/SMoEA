@@ -201,7 +201,7 @@ unit 級算對、task 級算錯。
 （與指紋堆 80/20 隔離切分）、TF-IDF 詞彙指紋、任務說明書（慢速路徑
 的裁決依據）。新增任務只需重跑建置。
 
-完整判定流程圖：[docs/router_flowchart.jpg](docs/router_flowchart.jpg)
+完整 Router 流程圖：[docs/router_flowchart.jpg](docs/router_flowchart.jpg)
 
 ## 測試集全量路由實測與評估 Routing Zone Outcome and Accuracy/Ablation/Baseline Comparison
 
