@@ -142,6 +142,35 @@ Clone 之後，手動放三樣東西：
 | Router 訓練樣本 | `dataset/train_data/task{N}_train.json` | 建置路由資產 |
 | LoRA adapters | `adapter/task{N}/` | 路由與本機合併 |
 | 測試資料 | `dataset/test_data/task{N}_test.json` | 只有批次評測需要 |
+| OOD 測試資料 | `dataset/ood_test_data/task149_test.json` | 只有完整 benchmark 需要 |
+
+adapters 每個任務一個目錄。解壓後若外層多包一層目錄，把裡面的 `task*` 移出攤平。
+
+上游資料可以這樣下載（只跑互動／線上服務的話，test data 可以略過）：
+
+```bash
+pip install gdown
+mkdir -p dataset/train_data dataset/test_data
+
+gdown 1AsJwaqQ3AXmPT8TpAxOyvCPbyHtCi1lG -O dataset/train_data/train_data.zip
+gdown 1aiT9r9v2tyH-0cdf_F6zhfEvYF0mZ2tM -O dataset/test_data/test_data.zip
+
+python3 -m zipfile -e dataset/train_data/train_data.zip dataset/train_data/
+python3 -m zipfile -e dataset/test_data/test_data.zip dataset/test_data/
+```
+
+**哪些任務算 OOD** 由 `dataset/ood_tasks.txt` 宣告（repo 自帶）。宣告即真相——
+列在裡面的就是 OOD，不管有沒有訓練檔。編號方式不同的話改這個檔。
+
+**OOD 的 task149**：保留原始檔名放進 `dataset/ood_test_data/`。要跑完整 benchmark
+之前先執行一次：
+
+```bash
+python scripts/map_ood_aliases.py --dataset-dir dataset
+```
+
+它會為 OOD `task149` 建立內部用的 `task9149` symlink，不需要手動改名。批次輸出的
+`source_task` 仍然是原始的 `task149`，另以 `internal_task_id` 保留內部編號供除錯。
 
 然後執行一次前置，可以選擇需不需要下載權重＆本地生成靜態權重。
 

@@ -168,6 +168,39 @@ Clone the repository, then place three things by hand:
 | Router training samples | `dataset/train_data/task{N}_train.json` | building router assets |
 | LoRA adapters | `adapter/task{N}/` | routing and local merging |
 | Test data | `dataset/test_data/task{N}_test.json` | batch evaluation only |
+| OOD test data | `dataset/ood_test_data/task149_test.json` | the full benchmark only |
+
+Adapters go one directory per task. If unpacking leaves an extra wrapping directory,
+move the `task*` directories out of it.
+
+The upstream data can be fetched like this (test data is optional if you only run
+interactive or online serving):
+
+```bash
+pip install gdown
+mkdir -p dataset/train_data dataset/test_data
+
+gdown 1AsJwaqQ3AXmPT8TpAxOyvCPbyHtCi1lG -O dataset/train_data/train_data.zip
+gdown 1aiT9r9v2tyH-0cdf_F6zhfEvYF0mZ2tM -O dataset/test_data/test_data.zip
+
+python3 -m zipfile -e dataset/train_data/train_data.zip dataset/train_data/
+python3 -m zipfile -e dataset/test_data/test_data.zip dataset/test_data/
+```
+
+**Which tasks count as OOD** is declared in `dataset/ood_tasks.txt`, which ships with
+the repo. The declaration is the truth: a task listed there is OOD whether or not it
+has a training file. Edit that file if your numbering differs.
+
+**OOD task149**: keep its original filename and put it under `dataset/ood_test_data/`.
+Before running the full benchmark, run this once:
+
+```bash
+python scripts/map_ood_aliases.py --dataset-dir dataset
+```
+
+It creates an internal `task9149` symlink for the OOD `task149`, so nothing has to be
+renamed by hand. Batch output still reports the original `task149` as `source_task`,
+with `internal_task_id` carrying the internal number for debugging.
 
 Then run setup once:
 
